@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Torre de Control Toyota</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: tablero de una columna fluida. Arriba el semáforo de valor de venta de autos en riesgo y la lectura de la situación;
+   al centro la torre de control (llegadas por semana y movimiento de ETA); abajo detalle, simulador, desempeño, tabla y sincronización.
+   Tinta azul-grisácea; rojo, ámbar y verde quedan reservados para el estado del embarque. */
+:root{
+  --bg:#F2F5F9; --surface:#FFFFFF; --surface2:#F7F9FC; --ink:#13202F; --ink2:#47576B; --muted:#76869A; --line:#DCE3EB;
+  --accent:#1D5FA8; --accent-bg:#E4EEF9;
+  --st-r:#C8372D; --st-a:#D39A0B; --st-g:#2E8B57;
+  --bg-r:#FBE8E6; --bg-a:#FBF0D3; --bg-g:#E1F3E8;
+  --ink-r:#8B1F18; --ink-a:#6E4B00; --ink-g:#175A36;
+  --shadow:0 1px 2px rgba(19,32,47,.06);
+  --font:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D1520; --surface:#152130; --surface2:#1A2838; --ink:#E7EDF4; --ink2:#AAB8C9; --muted:#8091A5; --line:#273749;
+  --accent:#5BA3E8; --accent-bg:#1B3652;
+  --st-r:#F0655B; --st-a:#E8B040; --st-g:#4CC48B;
+  --bg-r:#3A1E22; --bg-a:#3A2F17; --bg-g:#16342A;
+  --ink-r:#FFB8B2; --ink-a:#F5D38B; --ink-g:#A2E3C1;
+  --shadow:none; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D1520; --surface:#152130; --surface2:#1A2838; --ink:#E7EDF4; --ink2:#AAB8C9; --muted:#8091A5; --line:#273749;
+  --accent:#5BA3E8; --accent-bg:#1B3652;
+  --st-r:#F0655B; --st-a:#E8B040; --st-g:#4CC48B;
+  --bg-r:#3A1E22; --bg-a:#3A2F17; --bg-g:#16342A;
+  --ink-r:#FFB8B2; --ink-a:#F5D38B; --ink-g:#A2E3C1;
+  --shadow:none; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px;
+  font-variant-numeric:tabular-nums}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1{font-size:26px;line-height:1.15;margin:0;font-weight:600;letter-spacing:-.01em;text-wrap:balance}
+h2{font-size:15px;margin:0;font-weight:600}
+p{margin:0}
+.muted{color:var(--muted)} .ink2{color:var(--ink2)} .small{font-size:12px}
+header.top{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-between;align-items:flex-end}
+header.top .sub{color:var(--ink2);margin-top:4px;max-width:70ch}
+.ctrl{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.badge{font-size:12px;color:var(--ink2);border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:4px 8px}
+label.f{font-size:12px;color:var(--ink2);display:flex;gap:6px;align-items:center}
+input[type=date],select,textarea{font:inherit;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:5px 8px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;box-shadow:var(--shadow);min-width:0}
+.card-h{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px;margin-bottom:12px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:16px}
+.banner{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;background:var(--accent-bg);border-radius:8px;padding:8px 12px;font-size:13px}
+.banner[hidden]{display:none!important}
+button{font:inherit;font-size:13px;cursor:pointer;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:5px 10px}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) button.primary{color:#0D1520}}
+:root[data-theme="dark"] button.primary{color:#0D1520}
+button.chip[aria-pressed=true]{background:var(--accent-bg);border-color:var(--accent);font-weight:500}
+button[hidden]{display:none!important}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+
+.hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px}
+.kpi-label{font-size:12px;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em}
+.kpi-big{font-size:42px;line-height:1.1;font-weight:600;letter-spacing:-.02em;margin:4px 0 2px}
+.kpi-sub{color:var(--ink2);font-size:13px}
+.stack{display:flex;gap:2px;height:14px;margin:16px 0 12px}
+.stack>div{border-radius:3px;min-width:4px}
+.s-r{background:var(--st-r)} .s-a{background:var(--st-a)} .s-g{background:var(--st-g)}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media (max-width:560px){.tiles{grid-template-columns:1fr}}
+.tile{border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.tile.r{background:var(--bg-r);color:var(--ink-r)} .tile.a{background:var(--bg-a);color:var(--ink-a)} .tile.g{background:var(--bg-g);color:var(--ink-g)}
+.tile .t{display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px}
+.tile .v{font-size:18px;font-weight:600}
+.tile .d{font-size:12px;opacity:.92}
+.lectura{display:flex;flex-direction:column;gap:10px}
+.lectura p{max-width:62ch}
+.callout{border-left:3px solid var(--st-r);padding-left:10px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:0}
+.kpis>div{padding:4px 16px;border-left:1px solid var(--line)}
+.kpis>div:first-child{border-left:0;padding-left:0}
+@media (max-width:700px){.kpis>div{border-left:0;padding:8px 0;border-top:1px solid var(--line)} .kpis>div:first-child{border-top:0}}
+.kpis .v{font-size:22px;font-weight:600;line-height:1.2}
+.kpis .k{font-size:12px;color:var(--ink2)}
+
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:1px 9px 1px 7px;font-size:12px;font-weight:500;white-space:nowrap}
+.pill.r{background:var(--bg-r);color:var(--ink-r)} .pill.a{background:var(--bg-a);color:var(--ink-a)} .pill.g{background:var(--bg-g);color:var(--ink-g)}
+svg.ic{flex:none}
+.ic-r{fill:var(--st-r)} .ic-a{fill:var(--st-a)} .ic-g{fill:var(--st-g)}
+
+.chart-wrap{position:relative;min-width:0}
+.chart-wrap svg{display:block;width:100%;height:auto;overflow:visible}
+svg text{font-family:var(--font);fill:var(--ink2);font-size:11px}
+svg text.strong{fill:var(--ink);font-weight:500;font-size:12px}
+svg .grid{stroke:var(--line);stroke-width:1}
+svg .rowline{stroke:var(--line);stroke-width:1;opacity:.5}
+svg .sel{fill:var(--accent-bg)}
+svg .hit{fill:transparent;cursor:pointer}
+svg .orig{fill:var(--surface);stroke:var(--ink2);stroke-width:1.5}
+svg .corte{stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3}
+svg .ring{stroke:var(--surface);stroke-width:2}
+svg .bseg{stroke:var(--surface);stroke-width:2}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--ink2);margin-bottom:8px;align-items:center}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.tip{position:absolute;z-index:5;pointer-events:none;background:var(--ink);color:var(--bg);border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.45;max-width:270px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.tip[hidden]{display:none!important}
+
+.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin:4px 0 12px}
+.step{background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+.step .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.step .val{font-size:15px;font-weight:600;margin-top:2px}
+.step .n{font-size:11px;color:var(--muted)}
+.step.r{background:var(--bg-r);border-color:transparent;color:var(--ink-r)} .step.a{background:var(--bg-a);border-color:transparent;color:var(--ink-a)} .step.g{background:var(--bg-g);border-color:transparent;color:var(--ink-g)}
+.step.r .k,.step.a .k,.step.g .k,.step.r .n,.step.a .n,.step.g .n{color:inherit;opacity:.85}
+
+.sim-controls{display:flex;flex-direction:column;gap:12px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.sim-out{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:12px 0}
+.sim-out .box{background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.sim-out .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.sim-out .v{font-size:17px;font-weight:600}
+.delta-up{color:var(--ink-r)} .delta-down{color:var(--ink-g)}
+
+.tbl-scroll{overflow:auto;max-width:100%;max-height:440px;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:7px 10px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--line)}
+th{position:sticky;top:0;background:var(--surface2);font-size:12px;font-weight:500;color:var(--ink2);z-index:1}
+td.n,th.n{text-align:right}
+tr:last-child td{border-bottom:0}
+tr.selrow td{background:var(--accent-bg)}
+button.link{border:0;background:none;padding:0;color:var(--accent);font-weight:500;text-decoration:underline;text-underline-offset:2px}
+.barcell{display:flex;align-items:center;gap:8px;justify-content:flex-end;min-width:150px}
+.bar{height:8px;border-radius:2px 4px 4px 2px;background:var(--accent);min-width:2px}
+.filters{display:flex;flex-wrap:wrap;gap:8px 16px;margin-bottom:10px}
+details.data summary{cursor:pointer;font-weight:600;font-size:15px}
+details.data[open] summary{margin-bottom:10px}
+textarea{width:100%;min-height:110px;font-family:var(--mono);font-size:12px}
+.msg{font-size:13px;margin-top:8px}
+.msg.err{color:var(--ink-r)} .msg.ok{color:var(--ink-g)}
+.defs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px 24px;color:var(--ink2);font-size:13px}
+footer{color:var(--muted);font-size:12px;display:flex;flex-direction:column;gap:4px}
+footer a{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Torre de Control Toyota</h1>
+      <p class="sub">Embarques de partes y entrega de vehículos terminados (Corolla, Etios y Yaris). La fecha de necesidad en fábrica es la ETA original más 7 días, la producción lleva 30 días y la entrega en Buenos Aires otros 7. Si la ETA se atrasa, la entrega del auto también.</p>
+    </div>
+    <div class="ctrl">
+      <span class="badge" id="badge-src">Cargando datos…</span>
+      <button class="primary" id="btnUpdate">Actualizar</button>
+      <label class="f" for="corte">Fecha de corte <input type="date" id="corte" value="2026-11-10"></label>
+    </div>
+  </header>
+
+  <div class="banner" id="simBanner" hidden>
+    <span id="simBannerTxt"></span>
+    <button id="simReset">Volver a los datos reales</button>
+  </div>
+
+  <section class="hero" aria-label="Semáforo de valor de venta">
+    <div class="card">
+      <div class="kpi-label">Valor de venta de autos en riesgo</div>
+      <div class="kpi-big" id="kRisk">—</div>
+      <div class="kpi-sub" id="kRiskSub"></div>
+      <div class="stack" id="stack" role="img" aria-label="Reparto del valor en tránsito por estado"></div>
+      <div class="tiles" id="tiles"></div>
+    </div>
+    <div class="card lectura">
+      <h2>Lectura de la situación</h2>
+      <div id="lectura" class="lectura"></div>
+      <p class="small muted">Resumen armado por reglas a partir de los datos cargados. Se recalcula con la fecha de corte y con el simulador.</p>
+    </div>
+  </section>
+
+  <section class="card" aria-label="Indicadores">
+    <div class="kpis" id="kpis"></div>
+  </section>
+
+  <section class="card" aria-label="Llegadas por semana">
+    <div class="card-h">
+      <h2>Valor de venta en tránsito por semana de llegada prevista</h2>
+      <span class="small muted">Según la ETA actual, coloreado por estado</span>
+    </div>
+    <div class="legend" id="legendW"></div>
+    <div class="chart-wrap"><div id="weekly"></div><div class="tip" id="tipW" hidden></div></div>
+  </section>
+
+  <section class="card" aria-label="Movimiento de ETA">
+    <div class="card-h">
+      <h2>Movimiento de ETA de los embarques en tránsito</h2>
+      <span class="small muted">Ordenados por gravedad y valor. Tocá una fila para ver el detalle.</span>
+    </div>
+    <div class="filters">
+      <div class="seg" id="nShow" role="group" aria-label="Cantidad de filas">
+        <button class="chip" data-v="15" aria-pressed="true">Primeros 15</button>
+        <button class="chip" data-v="30" aria-pressed="false">Primeros 30</button>
+        <button class="chip" data-v="all" aria-pressed="false">Todos</button>
+      </div>
+      <span class="small muted" id="nShowTxt" style="align-self:center"></span>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="chart-wrap" id="chartWrap"><div id="chart"></div><div class="tip" id="tip" hidden></div></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card" aria-label="Detalle del embarque seleccionado">
+      <div class="card-h"><h2 id="detTitle">Detalle del embarque</h2><span id="detPill"></span></div>
+      <div class="flow" id="flow"></div>
+      <p class="ink2" id="detTxt"></p>
+    </section>
+    <section class="card" aria-label="Simulador">
+      <div class="card-h"><h2>Simulador: ¿y si la ETA se mueve?</h2><span class="small muted">Afecta a todo el tablero</span></div>
+      <div class="sim-controls">
+        <label class="f" for="scope" style="flex-wrap:wrap">Aplicar a <select id="scope"></select></label>
+        <div>
+          <label class="f" for="delay" style="justify-content:space-between"><span>Días de atraso adicional en la ETA</span><strong id="delayVal" style="color:var(--ink)">0 d</strong></label>
+          <input type="range" id="delay" min="-5" max="15" step="1" value="0">
+        </div>
+      </div>
+      <div class="sim-out" id="simOut"></div>
+      <div class="small muted" style="margin-bottom:4px">Valor en riesgo según el atraso adicional (embarques del alcance elegido)</div>
+      <div class="chart-wrap"><div id="sens"></div></div>
+    </section>
+  </div>
+
+  <section class="card" aria-label="Desempeño">
+    <div class="card-h">
+      <h2>Desempeño por grupo</h2>
+      <div class="seg" id="groupSeg">
+        <button class="chip" data-g="modelo" aria-pressed="true">Modelo</button>
+        <button class="chip" data-g="nav" aria-pressed="false">Naviera</button>
+        <button class="chip" data-g="origen" aria-pressed="false">Origen</button>
+        <button class="chip" data-g="fam" aria-pressed="false">Familia de partes</button>
+      </div>
+    </div>
+    <div class="tbl-scroll" style="max-height:none"><table id="perf"></table></div>
+    <p class="small muted" style="margin-top:8px">Desvío promedio y atrasos consideran todos los embarques. Autos y valor en riesgo cuentan solo embarques en tránsito con atraso de ETA.</p>
+  </section>
+
+  <section class="card" aria-label="Detalle de embarques">
+    <div class="card-h"><h2>Todos los embarques</h2><span class="small muted" id="tblCount"></span></div>
+    <div class="filters">
+      <div class="seg" id="fSit" role="group" aria-label="Situación">
+        <button class="chip" data-v="all" aria-pressed="false">Todos</button>
+        <button class="chip" data-v="En tránsito" aria-pressed="true">En tránsito</button>
+        <button class="chip" data-v="Arribado" aria-pressed="false">Arribados</button>
+      </div>
+      <div class="seg" id="fEst" role="group" aria-label="Estado">
+        <button class="chip" data-v="all" aria-pressed="true">Todos los estados</button>
+        <button class="chip" data-v="Rojo" aria-pressed="false">Rojo</button>
+        <button class="chip" data-v="Amarillo" aria-pressed="false">Amarillo</button>
+        <button class="chip" data-v="Verde" aria-pressed="false">Verde</button>
+      </div>
+      <div class="seg" id="fMod" role="group" aria-label="Modelo">
+        <button class="chip" data-v="all" aria-pressed="true">Todos los modelos</button>
+        <button class="chip" data-v="Corolla" aria-pressed="false">Corolla</button>
+        <button class="chip" data-v="Etios" aria-pressed="false">Etios</button>
+        <button class="chip" data-v="Yaris" aria-pressed="false">Yaris</button>
+      </div>
+    </div>
+    <div class="tbl-scroll"><table id="tbl"></table></div>
+  </section>
+
+  <section class="card">
+    <details class="data" id="syncBox">
+      <summary>Si la planilla no carga: pegar los datos a mano</summary>
+      <p class="ink2" style="max-width:72ch;margin-bottom:8px">El tablero lee la planilla de Google Sheets cada vez que se abre, cada minuto y cuando tocás Actualizar. Si no hay conexión con la planilla, podés copiar todas las celdas con sus encabezados (Ctrl+A y Ctrl+C), pegarlas acá (Ctrl+V) y el tablero se recalcula en tu navegador.</p>
+      <textarea id="paste" aria-label="Datos pegados desde Google Sheets" placeholder="Embarque, Modelo, Unidades, Origen, Naviera, Familia de partes, ETA original, ETA actual, …"></textarea>
+      <div class="ctrl" style="margin-top:8px">
+        <button class="primary" id="apply">Aplicar</button>
+        <button id="restore">Volver a la planilla</button>
+      </div>
+      <div class="msg" id="pasteMsg" role="status"></div>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2 style="margin-bottom:8px">Cómo se calcula</h2>
+    <div class="defs">
+      <p><strong>Necesidad en fábrica</strong> = ETA original + 7 días. Es una fecha fija.</p>
+      <p><strong>Fin de producción</strong> = necesidad + 30 días. <strong>Entrega comprometida</strong> = fin de producción + 7 días de logística y distribución en Buenos Aires. Ambas usan siempre la ETA original.</p>
+      <p><strong>Entrega proyectada</strong> = ETA actual + 44 días. Cada día de atraso de la ETA es un día de atraso en la entrega del auto.</p>
+      <p><strong>Desvío</strong> = ETA actual − ETA original, en días.</p>
+      <p><strong>Semáforo</strong>: verde si el embarque se adelanta o llega en fecha, amarillo con atraso de 1 a 3 días, rojo con atraso de más de 3 días.</p>
+      <p><strong>Valor en riesgo</strong> = unidades × precio unitario de los embarques en tránsito con cualquier atraso. <strong>En tránsito</strong>: ETA actual posterior a la fecha de corte.</p>
+    </div>
+  </section>
+  <footer>
+    <span>Datos simulados para un trabajo académico de logística, leídos de una planilla de Google Sheets. Las navieras, los orígenes y las unidades por embarque son inventados.</span>
+    <span>Precios unitarios en USD al dólar mayorista de $1.546 del 04/11/2026 (<a href="https://www.rava.com/cotizaciones/historico/dolar-mayorista/2026/11/04/" target="_blank" rel="noopener">Rava Bursátil</a>): Corolla XLI 2.0 CVT, lista de agosto 2026 (<a href="https://www.lanacion.com.ar/autos/toyota-publico-los-precios-para-agosto-2026-los-modelos-que-estan-mas-baratos-nid04082026/" target="_blank" rel="noopener">La Nación</a>); Yaris XS 1.5 CVT, lista de septiembre 2026 (<a href="https://autotest.com.ar/noticias/asi-es-el-toyota-mas-barato-del-mercado-cuanto-cuesta-en-septiembre-2026/" target="_blank" rel="noopener">Auto Test</a>); Etios estimado, porque no figura en la lista vigente.</span>
+  </footer>
+</div>
+
+<script>
+// ── CONFIGURACIÓN ──────────────────────────────────────────────────────────
+// Enlace CSV de la hoja "Embarques" publicada en la web (Archivo → Compartir → Publicar en la web → CSV).
+const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQoMfnfPAiOzjtmQx2TFLoQK5cX3Uc5ibpPkeisiCkdPrdgMHHr8JjALwM90wRoFbRuf-F60wo_Lj-g/pub?output=csv';
+const AUTO_REFRESH_MS = 60000;   // actualización automática en ms; 0 la desactiva
+// ──────────────────────────────────────────────────────────────────────────
+const EMBEDDED_CSV = `Embarque,Modelo,Unidades,Origen,Naviera,Familia de partes,ETA original,ETA actual,Desvío ETA (días),Fecha necesidad en fábrica,Fin de producción,Entrega comprometida,Entrega proyectada,Estado,Monto FOB (USD),Precio unitario (USD),Valor de venta (USD),Situación,Valor en riesgo (USD),Unidades en riesgo
+FCL 1,Yaris,16,Busan,Naviera D,Motores,01/09/2026,02/09/2026,1,08/09/2026,08/10/2026,15/10/2026,16/10/2026,Amarillo,148400,23100,369600,Arribado,0,0
+FCL 2,Yaris,9,Shenzhen,Naviera C,Motores,01/09/2026,01/09/2026,0,08/09/2026,08/10/2026,15/10/2026,15/10/2026,Verde,89800,23100,207900,Arribado,0,0
+FCL 3,Etios,18,Ningbo,Naviera B,Electrónica,15/09/2026,15/09/2026,0,22/09/2026,22/10/2026,29/10/2026,29/10/2026,Verde,158700,19100,343800,Arribado,0,0
+FCL 4,Etios,20,Shanghai,Naviera B,Electrónica,15/09/2026,14/09/2026,-1,22/09/2026,22/10/2026,29/10/2026,28/10/2026,Verde,164400,19100,382000,Arribado,0,0
+FCL 5,Corolla,11,Shanghai,Naviera A,Electrónica,15/09/2026,14/09/2026,-1,22/09/2026,22/10/2026,29/10/2026,28/10/2026,Verde,142200,28500,313500,Arribado,0,0
+FCL 6,Yaris,14,Busan,Naviera D,Chasis,25/09/2026,25/09/2026,0,02/10/2026,01/11/2026,08/11/2026,08/11/2026,Verde,154300,23100,323400,Arribado,0,0
+FCL 7,Etios,20,Shenzhen,Naviera C,Chasis,01/09/2026,01/09/2026,0,08/09/2026,08/10/2026,15/10/2026,15/10/2026,Verde,174000,19100,382000,Arribado,0,0
+FCL 8,Corolla,11,Ningbo,Naviera C,Chasis,25/09/2026,28/09/2026,3,02/10/2026,01/11/2026,08/11/2026,11/11/2026,Amarillo,138000,28500,313500,Arribado,0,0
+FCL 9,Yaris,16,Shanghai,Naviera B,Interiores,25/09/2026,25/09/2026,0,02/10/2026,01/11/2026,08/11/2026,08/11/2026,Verde,140500,23100,369600,Arribado,0,0
+FCL 10,Corolla,6,Shanghai,Naviera A,Interiores,15/09/2026,13/09/2026,-2,22/09/2026,22/10/2026,29/10/2026,27/10/2026,Verde,69000,28500,171000,Arribado,0,0
+FCL 11,Yaris,13,Busan,Naviera D,Interiores,25/09/2026,25/09/2026,0,02/10/2026,01/11/2026,08/11/2026,08/11/2026,Verde,124000,23100,300300,Arribado,0,0
+FCL 12,Etios,19,Shenzhen,Naviera D,Eléctricos,25/09/2026,25/09/2026,0,02/10/2026,01/11/2026,08/11/2026,08/11/2026,Verde,163000,19100,362900,Arribado,0,0
+FCL 13,Yaris,14,Ningbo,Naviera C,Eléctricos,25/09/2026,24/09/2026,-1,02/10/2026,01/11/2026,08/11/2026,07/11/2026,Verde,133700,23100,323400,Arribado,0,0
+FCL 14,Etios,18,Shanghai,Naviera B,Eléctricos,26/09/2026,26/09/2026,0,03/10/2026,02/11/2026,09/11/2026,09/11/2026,Verde,143000,19100,343800,Arribado,0,0
+FCL 15,Yaris,14,Shanghai,Naviera A,Motores,01/09/2026,01/09/2026,0,08/09/2026,08/10/2026,15/10/2026,15/10/2026,Verde,126500,23100,323400,Arribado,0,0
+FCL 16,Corolla,12,Busan,Naviera A,Motores,01/09/2026,31/08/2026,-1,08/09/2026,08/10/2026,15/10/2026,14/10/2026,Verde,147600,28500,342000,Arribado,0,0
+FCL 17,Etios,16,Shenzhen,Naviera D,Motores,05/10/2026,03/10/2026,-2,12/10/2026,11/11/2026,18/11/2026,16/11/2026,Verde,144800,19100,305600,Arribado,0,0
+FCL 18,Corolla,10,Ningbo,Naviera C,Electrónica,05/10/2026,03/10/2026,-2,12/10/2026,11/11/2026,18/11/2026,16/11/2026,Verde,122600,28500,285000,Arribado,0,0
+FCL 19,Etios,18,Shanghai,Naviera B,Electrónica,05/10/2026,05/10/2026,0,12/10/2026,11/11/2026,18/11/2026,18/11/2026,Verde,145900,19100,343800,Arribado,0,0
+FCL 20,Corolla,10,Shanghai,Naviera B,Electrónica,21/10/2026,21/10/2026,0,28/10/2026,27/11/2026,04/12/2026,04/12/2026,Verde,111600,28500,285000,Arribado,0,0
+FCL 21,Corolla,11,Busan,Naviera A,Chasis,21/10/2026,20/10/2026,-1,28/10/2026,27/11/2026,04/12/2026,03/12/2026,Verde,125400,28500,313500,Arribado,0,0
+FCL 22,Etios,16,Shenzhen,Naviera D,Chasis,21/10/2026,23/10/2026,2,28/10/2026,27/11/2026,04/12/2026,06/12/2026,Amarillo,131200,19100,305600,Arribado,0,0
+FCL 23,Yaris,15,Ningbo,Naviera C,Chasis,21/10/2026,21/10/2026,0,28/10/2026,27/11/2026,04/12/2026,04/12/2026,Verde,139100,23100,346500,Arribado,0,0
+FCL 24,Yaris,13,Shanghai,Naviera C,Interiores,05/10/2026,05/10/2026,0,12/10/2026,11/11/2026,18/11/2026,18/11/2026,Verde,130600,23100,300300,Arribado,0,0
+FCL 25,Yaris,16,Shanghai,Naviera B,Interiores,21/10/2026,21/10/2026,0,28/10/2026,27/11/2026,04/12/2026,04/12/2026,Verde,147600,23100,369600,Arribado,0,0
+FCL 26,Yaris,12,Busan,Naviera A,Interiores,21/10/2026,20/10/2026,-1,28/10/2026,27/11/2026,04/12/2026,03/12/2026,Verde,109400,23100,277200,Arribado,0,0
+FCL 27,Yaris,12,Shenzhen,Naviera D,Eléctricos,05/10/2026,05/10/2026,0,12/10/2026,11/11/2026,18/11/2026,18/11/2026,Verde,118000,23100,277200,Arribado,0,0
+FCL 28,Etios,15,Ningbo,Naviera D,Eléctricos,05/10/2026,04/10/2026,-1,12/10/2026,11/11/2026,18/11/2026,17/11/2026,Verde,114700,19100,286500,Arribado,0,0
+FCL 29,Corolla,8,Shanghai,Naviera C,Eléctricos,05/10/2026,04/10/2026,-1,12/10/2026,11/11/2026,18/11/2026,17/11/2026,Verde,90900,28500,228000,Arribado,0,0
+FCL 30,Yaris,16,Shanghai,Naviera B,Motores,05/10/2026,05/10/2026,0,12/10/2026,11/11/2026,18/11/2026,18/11/2026,Verde,177400,23100,369600,Arribado,0,0
+FCL 31,Etios,12,Busan,Naviera A,Motores,21/10/2026,21/10/2026,0,28/10/2026,27/11/2026,04/12/2026,04/12/2026,Verde,90200,19100,229200,Arribado,0,0
+FCL 32,Corolla,11,Shenzhen,Naviera A,Motores,21/10/2026,21/10/2026,0,28/10/2026,27/11/2026,04/12/2026,04/12/2026,Verde,139100,28500,313500,Arribado,0,0
+FCL 33,Etios,16,Ningbo,Naviera D,Electrónica,21/10/2026,21/10/2026,0,28/10/2026,27/11/2026,04/12/2026,04/12/2026,Verde,124900,19100,305600,Arribado,0,0
+FCL 34,Yaris,9,Shanghai,Naviera C,Electrónica,05/10/2026,05/10/2026,0,12/10/2026,11/11/2026,18/11/2026,18/11/2026,Verde,83100,23100,207900,Arribado,0,0
+FCL 35,Yaris,14,Shanghai,Naviera B,Electrónica,06/10/2026,06/10/2026,0,13/10/2026,12/11/2026,19/11/2026,19/11/2026,Verde,148200,23100,323400,Arribado,0,0
+FCL 36,Etios,18,Busan,Naviera B,Chasis,07/10/2026,07/10/2026,0,14/10/2026,13/11/2026,20/11/2026,20/11/2026,Verde,157200,19100,343800,Arribado,0,0
+FCL 37,Etios,17,Shenzhen,Naviera A,Chasis,08/10/2026,08/10/2026,0,15/10/2026,14/11/2026,21/11/2026,21/11/2026,Verde,137700,19100,324700,Arribado,0,0
+FCL 38,Yaris,16,Ningbo,Naviera D,Chasis,01/11/2026,01/11/2026,0,08/11/2026,08/12/2026,15/12/2026,15/12/2026,Verde,145700,23100,369600,Arribado,0,0
+FCL 39,Corolla,11,Shanghai,Naviera C,Interiores,01/11/2026,01/11/2026,0,08/11/2026,08/12/2026,15/12/2026,15/12/2026,Verde,147500,28500,313500,Arribado,0,0
+FCL 40,Corolla,7,Shanghai,Naviera C,Interiores,01/11/2026,05/11/2026,4,08/11/2026,08/12/2026,15/12/2026,19/12/2026,Rojo,81900,28500,199500,Arribado,0,0
+FCL 41,Corolla,12,Busan,Naviera B,Interiores,01/11/2026,01/11/2026,0,08/11/2026,08/12/2026,15/12/2026,15/12/2026,Verde,137800,28500,342000,Arribado,0,0
+FCL 42,Etios,18,Shenzhen,Naviera A,Eléctricos,01/11/2026,13/11/2026,12,08/11/2026,08/12/2026,15/12/2026,27/12/2026,Rojo,151800,19100,343800,En tránsito,343800,18
+FCL 43,Corolla,11,Ningbo,Naviera D,Eléctricos,01/11/2026,05/11/2026,4,08/11/2026,08/12/2026,15/12/2026,19/12/2026,Rojo,145900,28500,313500,Arribado,0,0
+FCL 44,Corolla,9,Shanghai,Naviera D,Eléctricos,09/11/2026,11/11/2026,2,16/11/2026,16/12/2026,23/12/2026,25/12/2026,Amarillo,104100,28500,256500,En tránsito,256500,9
+FCL 45,Yaris,15,Shanghai,Naviera C,Motores,09/11/2026,11/11/2026,2,16/11/2026,16/12/2026,23/12/2026,25/12/2026,Amarillo,160100,23100,346500,En tránsito,346500,15
+FCL 46,Etios,13,Busan,Naviera B,Motores,09/11/2026,12/11/2026,3,16/11/2026,16/12/2026,23/12/2026,26/12/2026,Amarillo,111500,19100,248300,En tránsito,248300,13
+FCL 47,Corolla,7,Shenzhen,Naviera A,Motores,09/11/2026,09/11/2026,0,16/11/2026,16/12/2026,23/12/2026,23/12/2026,Verde,79300,28500,199500,Arribado,0,0
+FCL 48,Yaris,14,Ningbo,Naviera A,Electrónica,09/11/2026,09/11/2026,0,16/11/2026,16/12/2026,23/12/2026,23/12/2026,Verde,127100,23100,323400,Arribado,0,0
+FCL 49,Corolla,9,Shanghai,Naviera D,Electrónica,09/11/2026,09/11/2026,0,16/11/2026,16/12/2026,23/12/2026,23/12/2026,Verde,107300,28500,256500,Arribado,0,0
+FCL 50,Corolla,8,Shanghai,Naviera C,Electrónica,09/11/2026,09/11/2026,0,16/11/2026,16/12/2026,23/12/2026,23/12/2026,Verde,109200,28500,228000,Arribado,0,0
+FCL 51,Corolla,11,Busan,Naviera B,Chasis,09/11/2026,09/11/2026,0,16/11/2026,16/12/2026,23/12/2026,23/12/2026,Verde,126100,28500,313500,Arribado,0,0
+FCL 52,Etios,16,Shenzhen,Naviera B,Chasis,09/11/2026,12/11/2026,3,16/11/2026,16/12/2026,23/12/2026,26/12/2026,Amarillo,142500,19100,305600,En tránsito,305600,16
+FCL 53,Etios,14,Ningbo,Naviera A,Chasis,09/11/2026,09/11/2026,0,16/11/2026,16/12/2026,23/12/2026,23/12/2026,Verde,110200,19100,267400,Arribado,0,0
+FCL 54,Corolla,6,Shanghai,Naviera D,Interiores,09/11/2026,08/11/2026,-1,16/11/2026,16/12/2026,23/12/2026,22/12/2026,Verde,70900,28500,171000,Arribado,0,0
+FCL 55,Yaris,16,Shanghai,Naviera C,Interiores,09/11/2026,10/11/2026,1,16/11/2026,16/12/2026,23/12/2026,24/12/2026,Amarillo,153600,23100,369600,Arribado,0,0
+FCL 56,Yaris,11,Busan,Naviera C,Interiores,25/11/2026,25/11/2026,0,02/12/2026,01/01/2027,08/01/2027,08/01/2027,Verde,112200,23100,254100,En tránsito,0,0
+FCL 57,Yaris,12,Shenzhen,Naviera B,Eléctricos,25/11/2026,24/11/2026,-1,02/12/2026,01/01/2027,08/01/2027,07/01/2027,Verde,128800,23100,277200,En tránsito,0,0
+FCL 58,Corolla,10,Ningbo,Naviera A,Eléctricos,25/11/2026,23/11/2026,-2,02/12/2026,01/01/2027,08/01/2027,06/01/2027,Verde,114100,28500,285000,En tránsito,0,0
+FCL 59,Etios,20,Shanghai,Naviera D,Eléctricos,25/11/2026,05/12/2026,10,02/12/2026,01/01/2027,08/01/2027,18/01/2027,Rojo,182400,19100,382000,En tránsito,382000,20
+FCL 60,Etios,17,Shanghai,Naviera D,Motores,25/11/2026,26/11/2026,1,02/12/2026,01/01/2027,08/01/2027,09/01/2027,Amarillo,143100,19100,324700,En tránsito,324700,17
+FCL 61,Etios,15,Busan,Naviera C,Motores,25/11/2026,25/11/2026,0,02/12/2026,01/01/2027,08/01/2027,08/01/2027,Verde,116900,19100,286500,En tránsito,0,0
+FCL 62,Yaris,12,Shenzhen,Naviera B,Motores,25/11/2026,25/11/2026,0,02/12/2026,01/01/2027,08/01/2027,08/01/2027,Verde,119800,23100,277200,En tránsito,0,0
+FCL 63,Etios,13,Ningbo,Naviera A,Electrónica,25/11/2026,25/11/2026,0,02/12/2026,01/01/2027,08/01/2027,08/01/2027,Verde,109200,19100,248300,En tránsito,0,0
+FCL 64,Yaris,14,Shanghai,Naviera A,Electrónica,25/11/2026,25/11/2026,0,02/12/2026,01/01/2027,08/01/2027,08/01/2027,Verde,142000,23100,323400,En tránsito,0,0
+FCL 65,Yaris,11,Shanghai,Naviera D,Electrónica,25/11/2026,28/11/2026,3,02/12/2026,01/01/2027,08/01/2027,11/01/2027,Amarillo,96700,23100,254100,En tránsito,254100,11
+FCL 66,Etios,15,Busan,Naviera C,Chasis,25/11/2026,25/11/2026,0,02/12/2026,01/01/2027,08/01/2027,08/01/2027,Verde,109500,19100,286500,En tránsito,0,0
+FCL 67,Etios,15,Shenzhen,Naviera B,Chasis,25/11/2026,27/11/2026,2,02/12/2026,01/01/2027,08/01/2027,10/01/2027,Amarillo,130800,19100,286500,En tránsito,286500,15
+FCL 68,Corolla,6,Shanghai,Naviera C,Chasis,12/11/2026,12/11/2026,0,19/11/2026,19/12/2026,26/12/2026,26/12/2026,Verde,76300,28500,171000,En tránsito,0,0
+FCL 69,Yaris,9,Shanghai,Naviera A,Eléctricos,12/11/2026,15/11/2026,3,19/11/2026,19/12/2026,26/12/2026,29/12/2026,Amarillo,81800,23100,207900,En tránsito,207900,9
+FCL 70,Etios,12,Busan,Naviera B,Electrónica,07/10/2026,07/10/2026,0,14/10/2026,13/11/2026,20/11/2026,20/11/2026,Verde,99000,19100,229200,Arribado,0,0
+FCL 71,Corolla,12,Ningbo,Naviera C,Interiores,23/12/2026,22/12/2026,-1,30/12/2026,29/01/2027,05/02/2027,04/02/2027,Verde,130800,28500,342000,En tránsito,0,0
+FCL 72,Etios,14,Shanghai,Naviera C,Eléctricos,16/12/2026,16/12/2026,0,23/12/2026,22/01/2027,29/01/2027,29/01/2027,Verde,108800,19100,267400,En tránsito,0,0
+FCL 73,Corolla,8,Shanghai,Naviera D,Eléctricos,20/10/2026,20/10/2026,0,27/10/2026,26/11/2026,03/12/2026,03/12/2026,Verde,91000,28500,228000,Arribado,0,0
+FCL 74,Yaris,15,Busan,Naviera C,Chasis,23/12/2026,29/12/2026,6,30/12/2026,29/01/2027,05/02/2027,11/02/2027,Rojo,143100,23100,346500,En tránsito,346500,15
+FCL 75,Corolla,11,Ningbo,Naviera A,Chasis,19/11/2026,22/11/2026,3,26/11/2026,26/12/2026,02/01/2027,05/01/2027,Amarillo,125900,28500,313500,En tránsito,313500,11
+FCL 76,Yaris,16,Shanghai,Naviera C,Eléctricos,02/10/2026,02/10/2026,0,09/10/2026,08/11/2026,15/11/2026,15/11/2026,Verde,144200,23100,369600,Arribado,0,0
+FCL 77,Corolla,7,Shanghai,Naviera C,Motores,30/11/2026,07/12/2026,7,07/12/2026,06/01/2027,13/01/2027,20/01/2027,Rojo,92300,28500,199500,En tránsito,199500,7
+FCL 78,Corolla,6,Shenzhen,Naviera D,Chasis,05/12/2026,06/12/2026,1,12/12/2026,11/01/2027,18/01/2027,19/01/2027,Amarillo,67000,28500,171000,En tránsito,171000,6
+FCL 79,Corolla,10,Ningbo,Naviera A,Eléctricos,23/12/2026,23/12/2026,0,30/12/2026,29/01/2027,05/02/2027,05/02/2027,Verde,122700,28500,285000,En tránsito,0,0
+FCL 80,Yaris,16,Ningbo,Naviera B,Chasis,12/12/2026,12/12/2026,0,19/12/2026,18/01/2027,25/01/2027,25/01/2027,Verde,176600,23100,369600,En tránsito,0,0
+FCL 81,Etios,20,Shanghai,Naviera B,Motores,31/10/2026,31/10/2026,0,07/11/2026,07/12/2026,14/12/2026,14/12/2026,Verde,151600,19100,382000,Arribado,0,0
+FCL 82,Etios,12,Shanghai,Naviera C,Motores,14/10/2026,15/10/2026,1,21/10/2026,20/11/2026,27/11/2026,28/11/2026,Amarillo,91900,19100,229200,Arribado,0,0
+FCL 83,Yaris,15,Ningbo,Naviera D,Eléctricos,02/10/2026,02/10/2026,0,09/10/2026,08/11/2026,15/11/2026,15/11/2026,Verde,153100,23100,346500,Arribado,0,0
+FCL 84,Yaris,14,Ningbo,Naviera A,Eléctricos,02/10/2026,01/10/2026,-1,09/10/2026,08/11/2026,15/11/2026,14/11/2026,Verde,152800,23100,323400,Arribado,0,0
+FCL 85,Corolla,10,Shenzhen,Naviera B,Electrónica,05/12/2026,05/12/2026,0,12/12/2026,11/01/2027,18/01/2027,18/01/2027,Verde,119900,28500,285000,En tránsito,0,0
+FCL 86,Yaris,9,Ningbo,Naviera A,Motores,30/12/2026,30/12/2026,0,06/01/2027,05/02/2027,12/02/2027,12/02/2027,Verde,97000,23100,207900,En tránsito,0,0
+FCL 87,Yaris,10,Ningbo,Naviera B,Electrónica,06/11/2026,07/11/2026,1,13/11/2026,13/12/2026,20/12/2026,21/12/2026,Amarillo,92300,23100,231000,Arribado,0,0
+FCL 88,Yaris,10,Shanghai,Naviera D,Electrónica,02/10/2026,03/10/2026,1,09/10/2026,08/11/2026,15/11/2026,16/11/2026,Amarillo,100100,23100,231000,Arribado,0,0
+FCL 89,Etios,15,Ningbo,Naviera D,Electrónica,14/10/2026,14/10/2026,0,21/10/2026,20/11/2026,27/11/2026,27/11/2026,Verde,109600,19100,286500,Arribado,0,0
+FCL 90,Etios,15,Busan,Naviera D,Electrónica,02/10/2026,04/10/2026,2,09/10/2026,08/11/2026,15/11/2026,17/11/2026,Amarillo,122700,19100,286500,Arribado,0,0
+FCL 91,Corolla,10,Shenzhen,Naviera D,Electrónica,14/10/2026,17/10/2026,3,21/10/2026,20/11/2026,27/11/2026,30/11/2026,Amarillo,132300,28500,285000,Arribado,0,0
+FCL 92,Corolla,8,Shanghai,Naviera D,Eléctricos,06/11/2026,06/11/2026,0,13/11/2026,13/12/2026,20/12/2026,20/12/2026,Verde,89000,28500,228000,Arribado,0,0
+FCL 93,Etios,12,Busan,Naviera D,Motores,06/11/2026,06/11/2026,0,13/11/2026,13/12/2026,20/12/2026,20/12/2026,Verde,103300,19100,229200,Arribado,0,0
+FCL 94,Etios,12,Busan,Naviera D,Interiores,30/11/2026,27/11/2026,-3,07/12/2026,06/01/2027,13/01/2027,10/01/2027,Verde,100400,19100,229200,En tránsito,0,0
+FCL 95,Yaris,9,Ningbo,Naviera B,Electrónica,23/12/2026,23/12/2026,0,30/12/2026,29/01/2027,05/02/2027,05/02/2027,Verde,81600,23100,207900,En tránsito,0,0
+FCL 96,Corolla,8,Shenzhen,Naviera A,Eléctricos,23/11/2026,24/11/2026,1,30/11/2026,30/12/2026,06/01/2027,07/01/2027,Amarillo,95900,28500,228000,En tránsito,228000,8
+FCL 97,Corolla,7,Busan,Naviera B,Motores,14/10/2026,14/10/2026,0,21/10/2026,20/11/2026,27/11/2026,27/11/2026,Verde,88800,28500,199500,Arribado,0,0
+FCL 98,Yaris,14,Shenzhen,Naviera D,Motores,30/12/2026,30/12/2026,0,06/01/2027,05/02/2027,12/02/2027,12/02/2027,Verde,146400,23100,323400,En tránsito,0,0
+FCL 99,Yaris,14,Shanghai,Naviera A,Electrónica,31/10/2026,31/10/2026,0,07/11/2026,07/12/2026,14/12/2026,14/12/2026,Verde,146900,23100,323400,Arribado,0,0
+FCL 100,Yaris,15,Shenzhen,Naviera B,Interiores,26/10/2026,27/10/2026,1,02/11/2026,02/12/2026,09/12/2026,10/12/2026,Amarillo,132800,23100,346500,Arribado,0,0
+FCL 101,Etios,19,Busan,Naviera C,Electrónica,30/11/2026,30/11/2026,0,07/12/2026,06/01/2027,13/01/2027,13/01/2027,Verde,164200,19100,362900,En tránsito,0,0
+FCL 102,Etios,14,Shenzhen,Naviera D,Electrónica,16/12/2026,20/12/2026,4,23/12/2026,22/01/2027,29/01/2027,02/02/2027,Rojo,108800,19100,267400,En tránsito,267400,14
+FCL 103,Etios,20,Ningbo,Naviera A,Electrónica,12/11/2026,16/11/2026,4,19/11/2026,19/12/2026,26/12/2026,30/12/2026,Rojo,164100,19100,382000,En tránsito,382000,20
+FCL 104,Corolla,6,Busan,Naviera C,Motores,05/12/2026,05/12/2026,0,12/12/2026,11/01/2027,18/01/2027,18/01/2027,Verde,77300,28500,171000,En tránsito,0,0
+FCL 105,Corolla,6,Ningbo,Naviera A,Electrónica,26/10/2026,28/10/2026,2,02/11/2026,02/12/2026,09/12/2026,11/12/2026,Amarillo,73000,28500,171000,Arribado,0,0
+FCL 106,Corolla,12,Busan,Naviera A,Eléctricos,23/11/2026,21/11/2026,-2,30/11/2026,30/12/2026,06/01/2027,04/01/2027,Verde,149000,28500,342000,En tránsito,0,0
+FCL 107,Corolla,6,Busan,Naviera D,Motores,06/11/2026,07/11/2026,1,13/11/2026,13/12/2026,20/12/2026,21/12/2026,Amarillo,66700,28500,171000,Arribado,0,0
+FCL 108,Etios,20,Busan,Naviera C,Interiores,12/11/2026,15/11/2026,3,19/11/2026,19/12/2026,26/12/2026,29/12/2026,Amarillo,168100,19100,382000,En tránsito,382000,20
+FCL 109,Yaris,13,Ningbo,Naviera A,Interiores,20/10/2026,20/10/2026,0,27/10/2026,26/11/2026,03/12/2026,03/12/2026,Verde,134000,23100,300300,Arribado,0,0
+FCL 110,Corolla,6,Shenzhen,Naviera B,Motores,12/11/2026,12/11/2026,0,19/11/2026,19/12/2026,26/12/2026,26/12/2026,Verde,71900,28500,171000,En tránsito,0,0
+FCL 111,Yaris,16,Busan,Naviera C,Interiores,07/10/2026,06/10/2026,-1,14/10/2026,13/11/2026,20/11/2026,19/11/2026,Verde,175500,23100,369600,Arribado,0,0
+FCL 112,Corolla,10,Busan,Naviera B,Motores,02/10/2026,29/09/2026,-3,09/10/2026,08/11/2026,15/11/2026,12/11/2026,Verde,125700,28500,285000,Arribado,0,0
+FCL 113,Yaris,15,Shanghai,Naviera D,Chasis,06/11/2026,06/11/2026,0,13/11/2026,13/12/2026,20/12/2026,20/12/2026,Verde,158500,23100,346500,Arribado,0,0
+FCL 114,Corolla,9,Shanghai,Naviera C,Motores,06/11/2026,05/11/2026,-1,13/11/2026,13/12/2026,20/12/2026,19/12/2026,Verde,113900,28500,256500,Arribado,0,0
+FCL 115,Yaris,14,Busan,Naviera A,Electrónica,20/10/2026,20/10/2026,0,27/10/2026,26/11/2026,03/12/2026,03/12/2026,Verde,134600,23100,323400,Arribado,0,0
+FCL 116,Yaris,13,Ningbo,Naviera B,Motores,20/10/2026,23/10/2026,3,27/10/2026,26/11/2026,03/12/2026,06/12/2026,Amarillo,125100,23100,300300,Arribado,0,0
+FCL 117,Corolla,12,Shanghai,Naviera D,Interiores,30/11/2026,30/11/2026,0,07/12/2026,06/01/2027,13/01/2027,13/01/2027,Verde,140200,28500,342000,En tránsito,0,0
+FCL 118,Corolla,11,Busan,Naviera B,Eléctricos,06/11/2026,06/11/2026,0,13/11/2026,13/12/2026,20/12/2026,20/12/2026,Verde,129900,28500,313500,Arribado,0,0
+FCL 119,Corolla,6,Ningbo,Naviera C,Interiores,12/12/2026,15/12/2026,3,19/12/2026,18/01/2027,25/01/2027,28/01/2027,Amarillo,74700,28500,171000,En tránsito,171000,6
+FCL 120,Etios,14,Shanghai,Naviera D,Chasis,05/12/2026,05/12/2026,0,12/12/2026,11/01/2027,18/01/2027,18/01/2027,Verde,116700,19100,267400,En tránsito,0,0
+FCL 121,Yaris,10,Ningbo,Naviera A,Motores,02/10/2026,05/10/2026,3,09/10/2026,08/11/2026,15/11/2026,18/11/2026,Amarillo,109400,23100,231000,Arribado,0,0
+FCL 122,Corolla,6,Shenzhen,Naviera A,Chasis,14/10/2026,14/10/2026,0,21/10/2026,20/11/2026,27/11/2026,27/11/2026,Verde,70200,28500,171000,Arribado,0,0
+FCL 123,Yaris,15,Busan,Naviera C,Chasis,12/12/2026,26/12/2026,14,19/12/2026,18/01/2027,25/01/2027,08/02/2027,Rojo,159500,23100,346500,En tránsito,346500,15
+FCL 124,Yaris,15,Shenzhen,Naviera C,Electrónica,30/11/2026,30/11/2026,0,07/12/2026,06/01/2027,13/01/2027,13/01/2027,Verde,133800,23100,346500,En tránsito,0,0
+FCL 125,Corolla,8,Ningbo,Naviera B,Chasis,30/12/2026,03/01/2027,4,06/01/2027,05/02/2027,12/02/2027,16/02/2027,Rojo,98800,28500,228000,En tránsito,228000,8
+FCL 126,Yaris,16,Busan,Naviera D,Motores,30/12/2026,28/12/2026,-2,06/01/2027,05/02/2027,12/02/2027,10/02/2027,Verde,163000,23100,369600,En tránsito,0,0
+FCL 127,Etios,13,Shenzhen,Naviera C,Motores,26/10/2026,24/10/2026,-2,02/11/2026,02/12/2026,09/12/2026,07/12/2026,Verde,116300,19100,248300,Arribado,0,0
+FCL 128,Etios,12,Shanghai,Naviera A,Chasis,12/11/2026,11/11/2026,-1,19/11/2026,19/12/2026,26/12/2026,25/12/2026,Verde,105800,19100,229200,En tránsito,0,0
+FCL 129,Etios,17,Shanghai,Naviera B,Eléctricos,23/11/2026,26/11/2026,3,30/11/2026,30/12/2026,06/01/2027,09/01/2027,Amarillo,143700,19100,324700,En tránsito,324700,17
+FCL 130,Yaris,16,Shanghai,Naviera C,Electrónica,16/12/2026,16/12/2026,0,23/12/2026,22/01/2027,29/01/2027,29/01/2027,Verde,152900,23100,369600,En tránsito,0,0
+FCL 131,Corolla,6,Shanghai,Naviera D,Electrónica,05/12/2026,12/12/2026,7,12/12/2026,11/01/2027,18/01/2027,25/01/2027,Rojo,73700,28500,171000,En tránsito,171000,6
+FCL 132,Yaris,14,Ningbo,Naviera C,Eléctricos,23/11/2026,21/11/2026,-2,30/11/2026,30/12/2026,06/01/2027,04/01/2027,Verde,123600,23100,323400,En tránsito,0,0
+FCL 133,Etios,14,Shanghai,Naviera A,Chasis,05/12/2026,05/12/2026,0,12/12/2026,11/01/2027,18/01/2027,18/01/2027,Verde,106900,19100,267400,En tránsito,0,0
+FCL 134,Etios,20,Shanghai,Naviera D,Eléctricos,05/12/2026,05/12/2026,0,12/12/2026,11/01/2027,18/01/2027,18/01/2027,Verde,182700,19100,382000,En tránsito,0,0
+FCL 135,Corolla,6,Shanghai,Naviera B,Chasis,31/10/2026,01/11/2026,1,07/11/2026,07/12/2026,14/12/2026,15/12/2026,Amarillo,76300,28500,171000,Arribado,0,0
+FCL 136,Corolla,7,Shenzhen,Naviera B,Electrónica,05/12/2026,05/12/2026,0,12/12/2026,11/01/2027,18/01/2027,18/01/2027,Verde,85500,28500,199500,En tránsito,0,0
+FCL 137,Corolla,7,Ningbo,Naviera C,Motores,30/11/2026,01/12/2026,1,07/12/2026,06/01/2027,13/01/2027,14/01/2027,Amarillo,92100,28500,199500,En tránsito,199500,7
+FCL 138,Yaris,11,Shanghai,Naviera B,Eléctricos,30/12/2026,31/12/2026,1,06/01/2027,05/02/2027,12/02/2027,13/02/2027,Amarillo,100100,23100,254100,En tránsito,254100,11
+FCL 139,Yaris,12,Busan,Naviera A,Eléctricos,06/11/2026,03/11/2026,-3,13/11/2026,13/12/2026,20/12/2026,17/12/2026,Verde,126200,23100,277200,Arribado,0,0
+FCL 140,Yaris,12,Busan,Naviera A,Eléctricos,06/11/2026,06/11/2026,0,13/11/2026,13/12/2026,20/12/2026,20/12/2026,Verde,108900,23100,277200,Arribado,0,0
+FCL 141,Yaris,10,Shenzhen,Naviera D,Electrónica,31/10/2026,02/11/2026,2,07/11/2026,07/12/2026,14/12/2026,16/12/2026,Amarillo,89300,23100,231000,Arribado,0,0
+FCL 142,Etios,15,Shenzhen,Naviera D,Electrónica,02/10/2026,02/10/2026,0,09/10/2026,08/11/2026,15/11/2026,15/11/2026,Verde,111300,19100,286500,Arribado,0,0
+FCL 143,Etios,20,Shanghai,Naviera C,Interiores,05/12/2026,05/12/2026,0,12/12/2026,11/01/2027,18/01/2027,18/01/2027,Verde,174800,19100,382000,En tránsito,0,0
+FCL 144,Corolla,11,Ningbo,Naviera D,Chasis,12/11/2026,17/11/2026,5,19/11/2026,19/12/2026,26/12/2026,31/12/2026,Rojo,146700,28500,313500,En tránsito,313500,11
+FCL 145,Yaris,16,Busan,Naviera C,Electrónica,14/10/2026,11/10/2026,-3,21/10/2026,20/11/2026,27/11/2026,24/11/2026,Verde,153800,23100,369600,Arribado,0,0
+FCL 146,Corolla,11,Busan,Naviera B,Interiores,05/12/2026,05/12/2026,0,12/12/2026,11/01/2027,18/01/2027,18/01/2027,Verde,147800,28500,313500,En tránsito,0,0
+FCL 147,Yaris,13,Busan,Naviera C,Eléctricos,16/12/2026,14/12/2026,-2,23/12/2026,22/01/2027,29/01/2027,27/01/2027,Verde,118400,23100,300300,En tránsito,0,0
+FCL 148,Etios,16,Busan,Naviera B,Chasis,31/10/2026,31/10/2026,0,07/11/2026,07/12/2026,14/12/2026,14/12/2026,Verde,138700,19100,305600,Arribado,0,0
+FCL 149,Corolla,12,Busan,Naviera B,Electrónica,14/10/2026,16/10/2026,2,21/10/2026,20/11/2026,27/11/2026,29/11/2026,Amarillo,157900,28500,342000,Arribado,0,0
+FCL 150,Corolla,7,Shanghai,Naviera A,Motores,12/11/2026,18/11/2026,6,19/11/2026,19/12/2026,26/12/2026,01/01/2027,Rojo,84100,28500,199500,En tránsito,199500,7
+FCL 151,Etios,20,Ningbo,Naviera A,Chasis,02/10/2026,29/09/2026,-3,09/10/2026,08/11/2026,15/11/2026,12/11/2026,Verde,165300,19100,382000,Arribado,0,0
+FCL 152,Yaris,10,Busan,Naviera A,Interiores,02/10/2026,02/10/2026,0,09/10/2026,08/11/2026,15/11/2026,15/11/2026,Verde,101700,23100,231000,Arribado,0,0
+FCL 153,Etios,12,Shanghai,Naviera B,Interiores,26/10/2026,26/10/2026,0,02/11/2026,02/12/2026,09/12/2026,09/12/2026,Verde,100200,19100,229200,Arribado,0,0
+FCL 154,Yaris,12,Shanghai,Naviera A,Chasis,26/10/2026,23/10/2026,-3,02/11/2026,02/12/2026,09/12/2026,06/12/2026,Verde,127400,23100,277200,Arribado,0,0
+FCL 155,Corolla,12,Shenzhen,Naviera A,Motores,30/12/2026,03/01/2027,4,06/01/2027,05/02/2027,12/02/2027,16/02/2027,Rojo,141500,28500,342000,En tránsito,342000,12
+FCL 156,Yaris,16,Busan,Naviera B,Eléctricos,12/12/2026,14/12/2026,2,19/12/2026,18/01/2027,25/01/2027,27/01/2027,Amarillo,170000,23100,369600,En tránsito,369600,16
+FCL 157,Yaris,15,Shenzhen,Naviera A,Motores,26/10/2026,28/10/2026,2,02/11/2026,02/12/2026,09/12/2026,11/12/2026,Amarillo,154300,23100,346500,Arribado,0,0
+FCL 158,Yaris,9,Ningbo,Naviera B,Eléctricos,26/10/2026,26/10/2026,0,02/11/2026,02/12/2026,09/12/2026,09/12/2026,Verde,91500,23100,207900,Arribado,0,0
+FCL 159,Yaris,14,Busan,Naviera B,Chasis,20/10/2026,23/10/2026,3,27/10/2026,26/11/2026,03/12/2026,06/12/2026,Amarillo,140000,23100,323400,Arribado,0,0
+FCL 160,Yaris,15,Busan,Naviera C,Chasis,20/10/2026,20/10/2026,0,27/10/2026,26/11/2026,03/12/2026,03/12/2026,Verde,156700,23100,346500,Arribado,0,0
+FCL 161,Yaris,13,Busan,Naviera D,Interiores,05/12/2026,10/12/2026,5,12/12/2026,11/01/2027,18/01/2027,23/01/2027,Rojo,137800,23100,300300,En tránsito,300300,13
+FCL 162,Etios,12,Busan,Naviera D,Eléctricos,20/10/2026,20/10/2026,0,27/10/2026,26/11/2026,03/12/2026,03/12/2026,Verde,95000,19100,229200,Arribado,0,0
+FCL 163,Yaris,13,Ningbo,Naviera A,Eléctricos,19/11/2026,19/11/2026,0,26/11/2026,26/12/2026,02/01/2027,02/01/2027,Verde,138700,23100,300300,En tránsito,0,0
+FCL 164,Etios,12,Ningbo,Naviera D,Chasis,07/10/2026,09/10/2026,2,14/10/2026,13/11/2026,20/11/2026,22/11/2026,Amarillo,96700,19100,229200,Arribado,0,0
+FCL 165,Yaris,16,Shanghai,Naviera A,Eléctricos,07/10/2026,06/10/2026,-1,14/10/2026,13/11/2026,20/11/2026,19/11/2026,Verde,157600,23100,369600,Arribado,0,0
+FCL 166,Yaris,16,Shanghai,Naviera D,Interiores,23/12/2026,06/01/2027,14,30/12/2026,29/01/2027,05/02/2027,19/02/2027,Rojo,152900,23100,369600,En tránsito,369600,16
+FCL 167,Yaris,16,Shenzhen,Naviera A,Interiores,19/11/2026,20/11/2026,1,26/11/2026,26/12/2026,02/01/2027,03/01/2027,Amarillo,148800,23100,369600,En tránsito,369600,16
+FCL 168,Corolla,7,Shenzhen,Naviera A,Chasis,30/11/2026,30/11/2026,0,07/12/2026,06/01/2027,13/01/2027,13/01/2027,Verde,84100,28500,199500,En tránsito,0,0
+FCL 169,Corolla,6,Busan,Naviera A,Motores,23/12/2026,23/12/2026,0,30/12/2026,29/01/2027,05/02/2027,05/02/2027,Verde,71600,28500,171000,En tránsito,0,0
+FCL 170,Etios,15,Shanghai,Naviera C,Eléctricos,20/10/2026,18/10/2026,-2,27/10/2026,26/11/2026,03/12/2026,01/12/2026,Verde,116200,19100,286500,Arribado,0,0
+FCL 171,Yaris,15,Shanghai,Naviera C,Motores,12/11/2026,11/11/2026,-1,19/11/2026,19/12/2026,26/12/2026,25/12/2026,Verde,166200,23100,346500,En tránsito,0,0
+FCL 172,Corolla,8,Ningbo,Naviera D,Chasis,31/10/2026,29/10/2026,-2,07/11/2026,07/12/2026,14/12/2026,12/12/2026,Verde,89900,28500,228000,Arribado,0,0
+FCL 173,Yaris,13,Busan,Naviera A,Interiores,12/11/2026,12/11/2026,0,19/11/2026,19/12/2026,26/12/2026,26/12/2026,Verde,123800,23100,300300,En tránsito,0,0
+FCL 174,Etios,20,Shanghai,Naviera D,Eléctricos,26/10/2026,26/10/2026,0,02/11/2026,02/12/2026,09/12/2026,09/12/2026,Verde,148400,19100,382000,Arribado,0,0
+FCL 175,Corolla,7,Shenzhen,Naviera D,Eléctricos,19/11/2026,28/11/2026,9,26/11/2026,26/12/2026,02/01/2027,11/01/2027,Rojo,90600,28500,199500,En tránsito,199500,7
+FCL 176,Corolla,10,Shenzhen,Naviera B,Chasis,19/11/2026,22/11/2026,3,26/11/2026,26/12/2026,02/01/2027,05/01/2027,Amarillo,128300,28500,285000,En tránsito,285000,10
+FCL 177,Corolla,7,Shanghai,Naviera C,Electrónica,19/11/2026,19/11/2026,0,26/11/2026,26/12/2026,02/01/2027,02/01/2027,Verde,76900,28500,199500,En tránsito,0,0
+FCL 178,Etios,20,Busan,Naviera A,Chasis,23/11/2026,23/11/2026,0,30/11/2026,30/12/2026,06/01/2027,06/01/2027,Verde,155200,19100,382000,En tránsito,0,0
+FCL 179,Yaris,11,Shanghai,Naviera D,Chasis,19/11/2026,19/11/2026,0,26/11/2026,26/12/2026,02/01/2027,02/01/2027,Verde,101500,23100,254100,En tránsito,0,0
+FCL 180,Yaris,15,Shanghai,Naviera D,Chasis,23/12/2026,30/12/2026,7,30/12/2026,29/01/2027,05/02/2027,12/02/2027,Rojo,150400,23100,346500,En tránsito,346500,15
+FCL 181,Corolla,6,Busan,Naviera B,Motores,20/10/2026,20/10/2026,0,27/10/2026,26/11/2026,03/12/2026,03/12/2026,Verde,79800,28500,171000,Arribado,0,0
+FCL 182,Yaris,15,Shanghai,Naviera A,Eléctricos,30/12/2026,07/01/2027,8,06/01/2027,05/02/2027,12/02/2027,20/02/2027,Rojo,152000,23100,346500,En tránsito,346500,15
+FCL 183,Corolla,6,Shenzhen,Naviera C,Electrónica,12/12/2026,12/12/2026,0,19/12/2026,18/01/2027,25/01/2027,25/01/2027,Verde,74000,28500,171000,En tránsito,0,0
+FCL 184,Etios,13,Shenzhen,Naviera C,Eléctricos,26/10/2026,25/10/2026,-1,02/11/2026,02/12/2026,09/12/2026,08/12/2026,Verde,100300,19100,248300,Arribado,0,0
+FCL 185,Yaris,13,Shenzhen,Naviera C,Interiores,14/10/2026,14/10/2026,0,21/10/2026,20/11/2026,27/11/2026,27/11/2026,Verde,138700,23100,300300,Arribado,0,0
+FCL 186,Corolla,9,Shanghai,Naviera A,Motores,06/11/2026,04/11/2026,-2,13/11/2026,13/12/2026,20/12/2026,18/12/2026,Verde,117400,28500,256500,Arribado,0,0
+FCL 187,Corolla,12,Shanghai,Naviera D,Eléctricos,19/11/2026,29/11/2026,10,26/11/2026,26/12/2026,02/01/2027,12/01/2027,Rojo,146900,28500,342000,En tránsito,342000,12
+FCL 188,Etios,15,Shanghai,Naviera C,Interiores,05/12/2026,03/12/2026,-2,12/12/2026,11/01/2027,18/01/2027,16/01/2027,Verde,114100,19100,286500,En tránsito,0,0
+FCL 189,Yaris,11,Busan,Naviera B,Chasis,05/12/2026,03/12/2026,-2,12/12/2026,11/01/2027,18/01/2027,16/01/2027,Verde,105100,23100,254100,En tránsito,0,0
+FCL 190,Etios,18,Busan,Naviera D,Motores,19/11/2026,18/11/2026,-1,26/11/2026,26/12/2026,02/01/2027,01/01/2027,Verde,151600,19100,343800,En tránsito,0,0
+FCL 191,Yaris,14,Shanghai,Naviera B,Electrónica,30/12/2026,05/01/2027,6,06/01/2027,05/02/2027,12/02/2027,18/02/2027,Rojo,124000,23100,323400,En tránsito,323400,14
+FCL 192,Yaris,11,Shenzhen,Naviera D,Chasis,12/12/2026,12/12/2026,0,19/12/2026,18/01/2027,25/01/2027,25/01/2027,Verde,108400,23100,254100,En tránsito,0,0
+FCL 193,Corolla,11,Ningbo,Naviera D,Chasis,12/12/2026,14/12/2026,2,19/12/2026,18/01/2027,25/01/2027,27/01/2027,Amarillo,147400,28500,313500,En tránsito,313500,11
+FCL 194,Corolla,12,Busan,Naviera D,Eléctricos,12/11/2026,12/11/2026,0,19/11/2026,19/12/2026,26/12/2026,26/12/2026,Verde,156400,28500,342000,En tránsito,0,0
+FCL 195,Corolla,8,Ningbo,Naviera D,Interiores,12/11/2026,12/11/2026,0,19/11/2026,19/12/2026,26/12/2026,26/12/2026,Verde,102100,28500,228000,En tránsito,0,0
+FCL 196,Etios,20,Ningbo,Naviera C,Chasis,12/11/2026,12/11/2026,0,19/11/2026,19/12/2026,26/12/2026,26/12/2026,Verde,146400,19100,382000,En tránsito,0,0
+FCL 197,Etios,14,Shanghai,Naviera B,Interiores,30/12/2026,30/12/2026,0,06/01/2027,05/02/2027,12/02/2027,12/02/2027,Verde,128300,19100,267400,En tránsito,0,0
+FCL 198,Etios,14,Busan,Naviera B,Chasis,30/12/2026,28/12/2026,-2,06/01/2027,05/02/2027,12/02/2027,10/02/2027,Verde,102500,19100,267400,En tránsito,0,0
+FCL 199,Etios,19,Ningbo,Naviera D,Interiores,30/12/2026,02/01/2027,3,06/01/2027,05/02/2027,12/02/2027,15/02/2027,Amarillo,146500,19100,362900,En tránsito,362900,19
+FCL 200,Corolla,8,Busan,Naviera B,Eléctricos,20/10/2026,20/10/2026,0,27/10/2026,26/11/2026,03/12/2026,03/12/2026,Verde,107800,28500,228000,Arribado,0,0
+FCL 201,Corolla,11,Shenzhen,Naviera B,Chasis,31/10/2026,28/10/2026,-3,07/11/2026,07/12/2026,14/12/2026,11/12/2026,Verde,122500,28500,313500,Arribado,0,0
+FCL 202,Corolla,6,Busan,Naviera B,Electrónica,02/10/2026,02/10/2026,0,09/10/2026,08/11/2026,15/11/2026,15/11/2026,Verde,72100,28500,171000,Arribado,0,0
+FCL 203,Yaris,16,Shenzhen,Naviera C,Chasis,31/10/2026,29/10/2026,-2,07/11/2026,07/12/2026,14/12/2026,12/12/2026,Verde,155100,23100,369600,Arribado,0,0
+FCL 204,Etios,18,Busan,Naviera D,Electrónica,14/10/2026,14/10/2026,0,21/10/2026,20/11/2026,27/11/2026,27/11/2026,Verde,138800,19100,343800,Arribado,0,0
+FCL 205,Corolla,10,Shanghai,Naviera A,Eléctricos,31/10/2026,29/10/2026,-2,07/11/2026,07/12/2026,14/12/2026,12/12/2026,Verde,111700,28500,285000,Arribado,0,0
+FCL 206,Etios,16,Busan,Naviera D,Electrónica,20/10/2026,17/10/2026,-3,27/10/2026,26/11/2026,03/12/2026,30/11/2026,Verde,131600,19100,305600,Arribado,0,0
+FCL 207,Yaris,15,Shenzhen,Naviera C,Electrónica,20/10/2026,20/10/2026,0,27/10/2026,26/11/2026,03/12/2026,03/12/2026,Verde,156100,23100,346500,Arribado,0,0
+FCL 208,Yaris,10,Shenzhen,Naviera D,Interiores,06/11/2026,06/11/2026,0,13/11/2026,13/12/2026,20/12/2026,20/12/2026,Verde,106000,23100,231000,Arribado,0,0
+FCL 209,Etios,12,Shenzhen,Naviera C,Chasis,20/10/2026,20/10/2026,0,27/10/2026,26/11/2026,03/12/2026,03/12/2026,Verde,106400,19100,229200,Arribado,0,0
+FCL 210,Etios,20,Shanghai,Naviera C,Motores,12/11/2026,12/11/2026,0,19/11/2026,19/12/2026,26/12/2026,26/12/2026,Verde,158300,19100,382000,En tránsito,0,0
+FCL 211,Yaris,13,Busan,Naviera D,Motores,05/12/2026,12/12/2026,7,12/12/2026,11/01/2027,18/01/2027,25/01/2027,Rojo,125900,23100,300300,En tránsito,300300,13
+FCL 212,Yaris,13,Busan,Naviera C,Interiores,30/11/2026,30/11/2026,0,07/12/2026,06/01/2027,13/01/2027,13/01/2027,Verde,128700,23100,300300,En tránsito,0,0
+FCL 213,Etios,14,Shanghai,Naviera C,Motores,14/10/2026,13/10/2026,-1,21/10/2026,20/11/2026,27/11/2026,26/11/2026,Verde,112800,19100,267400,Arribado,0,0
+FCL 214,Corolla,8,Busan,Naviera D,Electrónica,16/12/2026,13/12/2026,-3,23/12/2026,22/01/2027,29/01/2027,26/01/2027,Verde,97600,28500,228000,En tránsito,0,0
+FCL 215,Corolla,7,Shenzhen,Naviera A,Eléctricos,20/10/2026,21/10/2026,1,27/10/2026,26/11/2026,03/12/2026,04/12/2026,Amarillo,85700,28500,199500,Arribado,0,0
+FCL 216,Corolla,8,Busan,Naviera C,Chasis,30/11/2026,30/11/2026,0,07/12/2026,06/01/2027,13/01/2027,13/01/2027,Verde,94100,28500,228000,En tránsito,0,0
+FCL 217,Etios,13,Shanghai,Naviera D,Electrónica,14/10/2026,16/10/2026,2,21/10/2026,20/11/2026,27/11/2026,29/11/2026,Amarillo,112200,19100,248300,Arribado,0,0`;
+const DAY = 864e5, DELIVERY = 7, PROD = 30, DIST = 7, T_RED = 3;
+const $ = id => document.getElementById(id);
+const ST = {
+  Rojo:{c:'r',label:'Atraso crítico',done:'Tarde',rule:'atraso de más de 3 d'},
+  Amarillo:{c:'a',label:'Atraso leve',done:'Tarde leve',rule:'atraso de 1 a 3 d'},
+  Verde:{c:'g',label:'En fecha',done:'En fecha',rule:'sin atraso o adelantado'}
+};
+const EST = ['Rojo','Amarillo','Verde'], RANK = {Rojo:0,Amarillo:1,Verde:2};
+const state = {base:[], corte:Date.UTC(2026,10,10), delay:0, scope:'all', sel:null, fSit:'En tránsito', fEst:'all', fMod:'all', group:'modelo', nShow:'15', mode:'embedded', pendingCsv:null, dbRef:null, isOwner:null};
+
+/* ---------- formato ---------- */
+const pad = n => String(n).padStart(2,'0');
+const fD = (t,long) => { const d=new Date(t); return pad(d.getUTCDate())+'/'+pad(d.getUTCMonth()+1)+(long?'/'+d.getUTCFullYear():''); };
+const thou = n => String(Math.round(Math.abs(n))).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+const usd = v => 'USD '+(v<0?'−':'')+thou(v);
+const usdK = v => v>=1e6 ? (v/1e6).toFixed(2).replace('.',',')+' M' : Math.round(v/1e3)+' mil';
+const fM = v => v===0 ? '0' : (v/1e6).toFixed(v%1e6===0?0:1).replace('.',',')+' M';
+const sd = n => n>0 ? '+'+n : n<0 ? '−'+Math.abs(n) : '0';
+const dec = (x,s) => (s&&x>0?'+':x<0?'−':'')+Math.abs(x).toFixed(1).replace('.',',');
+const pct = x => Math.round(x*100)+'%';
+const uni = n => thou(n)+' unid.';
+
+/* ---------- lectura de datos ---------- */
+const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');
+function parseCSV(text){
+  text = text.replace(/^﻿/,'').replace(/\r\n?/g,'\n').trim();
+  const first = text.split('\n')[0];
+  const cnt = ch => first.split(ch).length-1;
+  const delim = cnt('\t')>0 ? '\t' : (cnt(';')>cnt(',') ? ';' : ',');
+  const rows=[]; let row=[], cell='', q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){cell+='"';i++;} else q=false; } else cell+=ch; }
+    else if(ch==='"') q=true;
+    else if(ch===delim){ row.push(cell); cell=''; }
+    else if(ch==='\n'){ row.push(cell); rows.push(row); row=[]; cell=''; }
+    else cell+=ch;
+  }
+  row.push(cell); rows.push(row);
+  return rows.filter(r=>r.some(c=>c.trim()!==''));
+}
+function parseDate(s){
+  s=String(s||'').trim(); let m;
+  if((m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))) return Date.UTC(+m[3],+m[2]-1,+m[1]);
+  if((m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return Date.UTC(+m[1],+m[2]-1,+m[3]);
+  return NaN;
+}
+function parseNum(s){
+  s=String(s||'').replace(/[^\d.,\-]/g,''); if(!s) return NaN;
+  const lc=s.lastIndexOf(','), ld=s.lastIndexOf('.');
+  if(lc>-1 && ld>-1){ s = lc>ld ? s.replace(/\./g,'').replace(',','.') : s.replace(/,/g,''); }
+  else if(lc>-1 || ld>-1){
+    const sep = lc>-1?',':'.', parts=s.split(sep);
+    if(parts.length>2 || (parts.length===2 && parts[1].length===3)) s=parts.join('');
+    else s=parts.join('.');
+  }
+  return parseFloat(s);
+}
+function buildRows(table){
+  if(table.length<2) return {error:'No encontré filas de datos. Incluí los encabezados y al menos un embarque.'};
+  const H = table[0].map(norm);
+  const find = f => H.findIndex(f);
+  const ix = {
+    id:find(h=>h==='embarque'), modelo:find(h=>h==='modelo'), unid:find(h=>h==='unidades'), origen:find(h=>h==='origen'), nav:find(h=>h==='naviera'),
+    fam:find(h=>h.startsWith('familia')), etaO:find(h=>h==='etaoriginal'), etaA:find(h=>h==='etaactual'),
+    precio:find(h=>h.startsWith('preciounitario')), venta:find(h=>h.startsWith('valordeventa'))
+  };
+  const miss=[]; if(ix.id<0)miss.push('Embarque'); if(ix.etaO<0)miss.push('ETA original'); if(ix.etaA<0)miss.push('ETA actual');
+  if(ix.venta<0 && ix.precio<0) miss.push('Precio unitario (o Valor de venta)');
+  if(miss.length) return {error:'Faltan columnas: '+miss.join(', ')+'.'};
+  const rows=[]; let skipped=0;
+  for(const r of table.slice(1)){
+    const etaO=parseDate(r[ix.etaO]), etaA=parseDate(r[ix.etaA]);
+    let unid = ix.unid>=0 ? parseNum(r[ix.unid]) : 1; if(!isFinite(unid)) unid=1;
+    let precio = ix.precio>=0 ? parseNum(r[ix.precio]) : NaN, venta = isFinite(precio) ? unid*precio : NaN;
+    if(!isFinite(venta) && ix.venta>=0) venta=parseNum(r[ix.venta]);
+    if(!(r[ix.id]||'').trim() || isNaN(etaO)||isNaN(etaA)||!isFinite(venta)){ skipped++; continue; }
+    rows.push({id:r[ix.id].trim(), modelo:ix.modelo>=0?(r[ix.modelo]||'—').trim():'—', unid, origen:ix.origen>=0?(r[ix.origen]||'—').trim():'—',
+      nav:ix.nav>=0?(r[ix.nav]||'—').trim():'—', fam:ix.fam>=0?(r[ix.fam]||'—').trim():'—', etaO, etaA0:etaA, venta, precio:isFinite(precio)?precio:venta/unid});
+  }
+  if(!rows.length) return {error:'Ninguna fila tiene todos los datos (fechas dd/mm/aaaa y valores numéricos).'};
+  return {rows, skipped};
+}
+
+/* ---------- cálculo ---------- */
+function inScope(r, scope){ if(scope==='all') return true; const [k,v]=scope.split(':'); return r[k]===v; }
+function enrich(base, delay, scope){
+  return base.map(r=>{
+    const transit = r.etaA0 > state.corte;
+    const shift = transit && delay!==0 && inScope(r,scope) ? delay : 0;
+    const etaA = r.etaA0 + shift*DAY;
+    const dev = Math.round((etaA-r.etaO)/DAY);
+    const need = r.etaO + DELIVERY*DAY;              // necesidad en fábrica: ETA original + 7
+    const fin = need + PROD*DAY;                     // fin de producción: necesidad + 30
+    const com = fin + DIST*DAY;                      // entrega comprometida: fin de producción + 7 (sobre ETA original)
+    const proy = etaA + (DELIVERY+PROD+DIST)*DAY;    // entrega proyectada: ETA actual + 44
+    const est = dev>T_RED ? 'Rojo' : dev>0 ? 'Amarillo' : 'Verde';
+    const late = transit && dev>0;
+    return {...r, transit, etaA, dev, need, fin, com, proy, est, risk: late?r.venta:0, urisk: late?r.unid:0, shifted: shift!==0};
+  });
+}
+const sumBy = (rows,f,key='venta') => rows.filter(f).reduce((a,r)=>a+r[key],0);
+
+/* ---------- iconos ---------- */
+function icon(est,size=11){
+  const c='ic-'+ST[est].c, s=size;
+  const p = est==='Rojo' ? 'M6 1.2 11 10.6H1z' : est==='Amarillo' ? 'M6 .8 11.2 6 6 11.2.8 6z' : null;
+  return '<svg class="ic" width="'+s+'" height="'+s+'" viewBox="0 0 12 12" aria-hidden="true">'+(p?'<path class="'+c+'" d="'+p+'"/>':'<circle class="'+c+'" cx="6" cy="6" r="5"/>')+'</svg>';
+}
+const pill = (est,transit) => '<span class="pill '+ST[est].c+'">'+icon(est)+(transit?ST[est].label:ST[est].done)+'</span>';
+
+/* ---------- vistas ---------- */
+let E=[];
+function renderHero(){
+  const T=E.filter(r=>r.transit), tot=sumBy(T,()=>true), risk=sumBy(T,()=>true,'risk'), uT=sumBy(T,()=>true,'unid'), uR=sumBy(T,()=>true,'urisk');
+  const val={}, cnt={}, un={}; EST.forEach(e=>{val[e]=sumBy(T,r=>r.est===e); cnt[e]=T.filter(r=>r.est===e).length; un[e]=sumBy(T,r=>r.est===e,'unid');});
+  $('kRisk').textContent = usd(risk);
+  $('kRiskSub').textContent = tot? pct(risk/tot)+' del valor de venta en tránsito ('+usd(tot)+') sale después de la fecha comprometida.' : 'No hay embarques en tránsito a la fecha de corte.';
+  $('stack').innerHTML = EST.map(e=>'<div class="s-'+ST[e].c+'" style="flex:'+(val[e]||0)+' 1 0" title="'+ST[e].label+': '+usd(val[e])+'"></div>').join('');
+  $('tiles').innerHTML = EST.map(e=>'<div class="tile '+ST[e].c+'"><div class="t">'+icon(e,12)+ST[e].label+'</div><div class="v">'+usd(val[e])+'</div><div class="d">'+cnt[e]+' embarque'+(cnt[e]===1?'':'s')+' · '+uni(un[e])+'<br>'+ST[e].rule+'</div></div>').join('');
+  // indicadores
+  const all=E, nAll=all.length, nOk=all.filter(r=>r.dev<=0).length, nLeve=all.filter(r=>r.dev>0&&r.dev<=T_RED).length, nCrit=all.filter(r=>r.dev>T_RED).length;
+  const late=T.filter(r=>r.dev>0), avg=late.length? late.reduce((a,r)=>a+r.dev,0)/late.length : 0;
+  $('kpis').innerHTML =
+    '<div><div class="v">'+thou(uR)+'</div><div class="k">autos en riesgo, de '+thou(uT)+' en tránsito</div></div>'
+   +'<div><div class="v">'+(nAll?pct(nOk/nAll):'—')+'</div><div class="k">de los embarques entrega a tiempo (arribados y en tránsito); '+(nAll?pct(nLeve/nAll):'0%')+' atraso leve, '+(nAll?pct(nCrit/nAll):'0%')+' crítico</div></div>'
+   +'<div><div class="v">'+(late.length?dec(avg,true).replace('+','')+' d':'0 d')+'</div><div class="k">atraso promedio de los embarques atrasados en tránsito</div></div>'
+   +'<div><div class="v">'+T.length+'</div><div class="k">embarques en tránsito por '+usd(tot)+'</div></div>';
+  // lectura
+  const parts=[];
+  parts.push('<p>Con corte al <strong>'+fD(state.corte,true)+'</strong> hay <strong>'+T.length+' embarques en tránsito</strong> con '+thou(uT)+' autos. <strong>'+cnt.Rojo+'</strong> tienen un atraso crítico (más de 3 días) y <strong>'+cnt.Amarillo+'</strong> un atraso leve (1 a 3 días).</p>');
+  if(late.length){
+    const w=[...late].sort((a,b)=>b.dev-a.dev||b.venta-a.venta)[0];
+    parts.push('<p class="callout">El mayor atraso es el de <strong>'+w.id+'</strong> ('+w.modelo+'): ETA '+sd(w.dev)+' días. La entrega a Buenos Aires pasa del '+fD(w.com,true)+' al '+fD(w.proy,true)+'.</p>');
+    const by=k=>{const o={}; late.forEach(r=>o[r[k]]=(o[r[k]]||0)+r.venta); return Object.entries(o).sort((a,b)=>b[1]-a[1])[0];};
+    const tm=by('modelo'), tn=by('nav');
+    parts.push('<p>El modelo con más valor en riesgo es <strong>'+tm[0]+'</strong> ('+usd(tm[1])+') y la naviera que más concentra es <strong>'+tn[0]+'</strong> ('+pct(tn[1]/risk)+' del riesgo).</p>');
+  } else parts.push('<p>Ningún embarque en tránsito tiene atraso de ETA.</p>');
+  const A=E.filter(r=>!r.transit), lateA=A.filter(r=>r.dev>0).length;
+  if(A.length) parts.push('<p class="muted">Histórico: de '+A.length+' embarques arribados, '+lateA+' ('+pct(lateA/A.length)+') llegaron con atraso de ETA.</p>');
+  $('lectura').innerHTML = parts.join('');
+}
+
+/* tooltips */
+function bindTip(hostId, tipId, html){
+  const host=$(hostId), tip=$(tipId), wrap=host.parentElement;
+  host.addEventListener('mousemove',e=>{
+    const h=e.target.closest('.hit'); if(!h){ tip.hidden=true; return; }
+    const t=html(h); if(!t){ tip.hidden=true; return; }
+    tip.innerHTML=t; tip.hidden=false;
+    const wb=wrap.getBoundingClientRect(); let lx=e.clientX-wb.left+14, ly=e.clientY-wb.top+14;
+    if(lx+tip.offsetWidth>wb.width) lx=e.clientX-wb.left-tip.offsetWidth-14; if(lx<0) lx=4;
+    tip.style.left=lx+'px'; tip.style.top=ly+'px';
+  });
+  host.addEventListener('mouseleave',()=>{ tip.hidden=true; });
+}
+const sw = (est,txt) => '<span>'+icon(est,12)+txt+'</span>';
+function legendW(){ return EST.map(e=>sw(e,ST[e].label+' ('+ST[e].rule+')')).join(''); }
+function legendHTML(){
+  return '<span><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle class="orig" cx="7" cy="7" r="4.5"/></svg>ETA original</span>'
+   +'<span><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle class="ic-g" cx="7" cy="7" r="5"/></svg>ETA actual · en fecha o adelantada</span>'
+   +'<span><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path class="ic-a" d="M7 1 13 7 7 13 1 7z"/></svg>atraso de 1 a 3 d</span>'
+   +'<span><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path class="ic-r" d="M7 1.2 13 12.4H1z"/></svg>atraso de más de 3 d</span>'
+   +'<span><svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true"><line class="corte" x1="9" y1="0" x2="9" y2="14"/></svg>Fecha de corte</span>';
+}
+function niceTicks(max){
+  const e=Math.pow(10,Math.floor(Math.log10(max||1)));
+  let step=e; for(const m of [1,2,2.5,5,10]){ step=m*e; if(max/step<=4) break; }
+  const n=Math.ceil(max/step); const t=[]; for(let i=0;i<=n;i++) t.push(i*step); return t;
+}
+let WK=[];
+function weekStart(t){ const dow=(new Date(t).getUTCDay()+6)%7; return t-dow*DAY; }
+function renderWeekly(){
+  $('legendW').innerHTML=legendW();
+  const host=$('weekly'), T=E.filter(r=>r.transit);
+  if(!T.length){ host.innerHTML='<p class="muted">No hay embarques en tránsito a la fecha de corte.</p>'; WK=[]; return; }
+  const g={}; T.forEach(r=>{ const w=weekStart(r.etaA); const o=(g[w]=g[w]||{w,Rojo:0,Amarillo:0,Verde:0,n:0,u:0}); o[r.est]+=r.venta; o.n++; o.u+=r.unid; });
+  const ks=Object.keys(g).map(Number), w0=Math.min(...ks), w1=Math.max(...ks); WK=[];
+  for(let w=w0; w<=w1; w+=7*DAY) WK.push(g[w]||{w,Rojo:0,Amarillo:0,Verde:0,n:0,u:0});
+  const W=Math.max(300,host.clientWidth||320), H=220, ml=52, mr=8, mt=10, mb=30;
+  const tot=WK.map(o=>o.Rojo+o.Amarillo+o.Verde), ticks=niceTicks(Math.max(...tot)), ymax=ticks[ticks.length-1];
+  const pw=W-ml-mr, slot=pw/WK.length, bw=Math.min(46,slot*.7), y=v=>mt+(1-v/ymax)*(H-mt-mb);
+  let s='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" role="img" aria-label="Valor de venta en tránsito por semana de llegada prevista">';
+  ticks.forEach(v=>{ s+='<line class="grid" x1="'+ml+'" x2="'+(W-mr)+'" y1="'+y(v)+'" y2="'+y(v)+'"/><text x="'+(ml-6)+'" y="'+(y(v)+4)+'" text-anchor="end">'+fM(v)+'</text>'; });
+  const every=Math.max(1,Math.ceil(46/slot));
+  WK.forEach((o,i)=>{
+    const x=ml+i*slot+(slot-bw)/2; let acc=0;
+    EST.forEach(e=>{ const v=o[e]; if(v>0){ const y0=y(acc), y1=y(acc+v); s+='<rect class="bseg ic-'+ST[e].c+'" x="'+x+'" y="'+y1+'" width="'+bw+'" height="'+Math.max(2,y0-y1)+'" rx="2"/>'; acc+=v; } });
+    if(i%every===0) s+='<text x="'+(ml+i*slot+slot/2)+'" y="'+(H-10)+'" text-anchor="middle">'+fD(o.w)+'</text>';
+    s+='<rect class="hit" data-i="'+i+'" x="'+(ml+i*slot)+'" y="'+mt+'" width="'+slot+'" height="'+(H-mt-mb)+'"/>';
+  });
+  s+='</svg>';
+  host.innerHTML=s;
+}
+function markerSVG(est,cx,cy,r){
+  const c='ic-'+ST[est].c;
+  if(est==='Rojo') return '<path class="'+c+' ring" d="M'+cx+' '+(cy-r*1.2)+'L'+(cx+r*1.15)+' '+(cy+r*.9)+'L'+(cx-r*1.15)+' '+(cy+r*.9)+'Z" stroke-linejoin="round"/>';
+  if(est==='Amarillo') return '<path class="'+c+' ring" d="M'+cx+' '+(cy-r*1.2)+'L'+(cx+r*1.2)+' '+cy+'L'+cx+' '+(cy+r*1.2)+'L'+(cx-r*1.2)+' '+cy+'Z" stroke-linejoin="round"/>';
+  return '<circle class="'+c+' ring" cx="'+cx+'" cy="'+cy+'" r="'+r+'"/>';
+}
+let DB=[];
+function renderChart(){
+  const all=E.filter(r=>r.transit).sort((a,b)=>RANK[a.est]-RANK[b.est]||b.venta-a.venta);
+  const T = state.nShow==='all' ? all : all.slice(0,+state.nShow); DB=T;
+  const host=$('chart'); $('legend').innerHTML=legendHTML();
+  $('nShowTxt').textContent = all.length? 'Mostrando '+T.length+' de '+all.length+' embarques en tránsito' : '';
+  if(!T.length){ host.innerHTML='<p class="muted">No hay embarques en tránsito a la fecha de corte.</p>'; return; }
+  const W=Math.max(300,host.clientWidth||320), narrow=W<640;
+  const L=narrow?64:92, R=narrow?58:196, top=30, rh=narrow?26:28, H=top+T.length*rh+8;
+  let lo=Math.min(state.corte,...T.map(r=>Math.min(r.etaO,r.etaA))), hi=Math.max(...T.map(r=>Math.max(r.etaO,r.etaA)));
+  lo-=2*DAY; hi+=2*DAY;
+  const x=t=>L+(t-lo)/(hi-lo)*(W-L-R);
+  let s='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" role="img" aria-label="Movimiento de ETA por embarque en tránsito">';
+  const step=narrow?14:7; let t0=Math.ceil(lo/DAY/step)*step*DAY;
+  for(let t=t0;t<=hi;t+=step*DAY){ if(x(t)>W-R-14) break; s+='<line class="grid" x1="'+x(t)+'" x2="'+x(t)+'" y1="'+(top-4)+'" y2="'+(H-6)+'"/><text x="'+x(t)+'" y="'+(top-12)+'" text-anchor="middle">'+fD(t)+'</text>'; }
+  if(state.corte>=lo && state.corte<=hi) s+='<line class="corte" x1="'+x(state.corte)+'" x2="'+x(state.corte)+'" y1="'+(top-4)+'" y2="'+(H-6)+'"/>';
+  T.forEach((r,i)=>{
+    const cy=top+i*rh+rh/2, sel=r.id===state.sel;
+    if(sel) s+='<rect class="sel" x="0" y="'+(cy-rh/2)+'" width="'+W+'" height="'+rh+'" rx="4"/>';
+    s+='<line class="rowline" x1="'+L+'" x2="'+(W-R)+'" y1="'+cy+'" y2="'+cy+'"/>';
+    s+='<text class="strong" x="8" y="'+(cy+4)+'">'+r.id+'</text>';
+    if(r.dev!==0) s+='<line style="stroke:var(--st-'+ST[r.est].c+')" stroke-width="3" stroke-linecap="round" opacity=".55" x1="'+x(r.etaO)+'" x2="'+x(r.etaA)+'" y1="'+cy+'" y2="'+cy+'"/>';
+    s+='<circle class="orig" cx="'+x(r.etaO)+'" cy="'+cy+'" r="4"/>';
+    s+=markerSVG(r.est,x(r.etaA),cy,5.5);
+    s+='<text x="'+(W-R+10)+'" y="'+(cy+4)+'" class="strong">'+sd(r.dev)+' d</text>';
+    if(!narrow){ s+='<text x="'+(W-R+56)+'" y="'+(cy+4)+'">'+r.modelo+'</text><text x="'+(W-R+112)+'" y="'+(cy+4)+'">'+usdK(r.venta)+'</text>'; }
+    s+='<rect class="hit" data-id="'+r.id+'" x="0" y="'+(cy-rh/2)+'" width="'+W+'" height="'+rh+'"/>';
+  });
+  s+='<text x="'+(W-R+10)+'" y="'+(top-12)+'">Desvío'+(narrow?'':'  ·  Modelo  ·  Venta')+'</text></svg>';
+  host.innerHTML=s;
+}
+function renderDetail(){
+  let r=E.find(x=>x.id===state.sel);
+  if(!r){ r=[...E.filter(x=>x.transit)].sort((a,b)=>RANK[a.est]-RANK[b.est]||b.venta-a.venta)[0] || E[0]; state.sel=r&&r.id; }
+  if(!r) return;
+  $('detTitle').textContent='Detalle de '+r.id+' · '+r.modelo;
+  $('detPill').innerHTML=pill(r.est,r.transit);
+  const mv=r.dev===0?'Sin cambio':r.dev>0?'Atraso '+sd(r.dev)+' d':'Adelanto '+sd(r.dev)+' d';
+  const steps=[['ETA original',fD(r.etaO,true),''],['Movimiento',mv,''],['ETA actual',fD(r.etaA,true),''],['Necesidad en fábrica',fD(r.need,true),'ETA original + 7 d'],
+    ['Fin de producción',fD(r.fin,true),'necesidad + 30 d'],['Entrega comprometida',fD(r.com,true),'fin de producción + 7 d'],['Entrega proyectada',fD(r.proy,true),'ETA actual + 44 d'],
+    ['Estado',r.transit?ST[r.est].label:ST[r.est].done,ST[r.est].c]];
+  $('flow').innerHTML=steps.map(s=>'<div class="step '+(['r','a','g'].includes(s[2])?s[2]:'')+'"><div class="k">'+s[0]+'</div><div class="val">'+s[1]+'</div>'+(['r','a','g'].includes(s[2])||!s[2]?'':'<div class="n">'+s[2]+'</div>')+'</div>').join('');
+  const base=r.id+' ('+r.nav+', '+r.origen+', '+r.fam+') lleva partes para '+r.unid+' '+r.modelo+' a '+usd(r.precio)+' cada uno: '+usd(r.venta)+'. ';
+  const m = r.dev===0?'La ETA no se movió.':r.dev>0?'La ETA se atrasó '+r.dev+' días.':'La ETA se adelantó '+Math.abs(r.dev)+' días.';
+  const res = r.dev>0 ? 'La entrega a Buenos Aires pasa del '+fD(r.com,true)+' al '+fD(r.proy,true)+(r.transit?', y '+r.unid+' autos ('+usd(r.venta)+') quedan en riesgo.':'. El embarque ya arribó, así que la entrega saldrá tarde.')
+    : r.dev===0 ? 'La entrega se mantiene en la fecha comprometida.' : 'La entrega se anticipa '+Math.abs(r.dev)+' días.';
+  $('detTxt').textContent = base+m+' '+res+(r.shifted?' Incluye la simulación activa.':'');
+}
+function scopeOptions(){
+  const sel=$('scope'), cur=state.scope;
+  const T=state.base.filter(r=>r.etaA0>state.corte);
+  const uniq=k=>[...new Set(T.map(r=>r[k]))].sort();
+  let h='<option value="all">Todos los embarques en tránsito</option>';
+  h+='<optgroup label="Por modelo">'+uniq('modelo').map(v=>'<option value="modelo:'+v+'">'+v+'</option>').join('')+'</optgroup>';
+  h+='<optgroup label="Por naviera">'+uniq('nav').map(v=>'<option value="nav:'+v+'">'+v+'</option>').join('')+'</optgroup>';
+  h+='<optgroup label="Por origen">'+uniq('origen').map(v=>'<option value="origen:'+v+'">'+v+'</option>').join('')+'</optgroup>';
+  sel.innerHTML=h; sel.value=[...sel.options].some(o=>o.value===cur)?cur:'all'; state.scope=sel.value;
+}
+function renderSim(){
+  $('delayVal').textContent=sd(state.delay)+' d';
+  const base=enrich(state.base,0,state.scope);
+  const f=rs=>({risk:sumBy(rs.filter(r=>r.transit),()=>true,'risk'), u:sumBy(rs.filter(r=>r.transit),()=>true,'urisk'), red:rs.filter(r=>r.transit&&r.est==='Rojo').length});
+  const b=f(base), s=f(E), dv=s.risk-b.risk, du=s.u-b.u, dr=s.red-b.red;
+  const cl=x=>x>0?'delta-up':x<0?'delta-down':'';
+  const box=(k,v,d,t)=>'<div class="box"><div class="k">'+k+'</div><div class="v">'+v+'</div><div class="small '+cl(d)+'">'+(d===0?'igual que el dato real':t)+'</div></div>';
+  $('simOut').innerHTML = box('Valor en riesgo',usd(s.risk),dv,(dv>0?'+':'−')+usd(Math.abs(dv))+' vs. real')
+    + box('Autos en riesgo',thou(s.u),du,sd(du)+' vs. real') + box('Embarques en rojo',s.red,dr,sd(dr)+' vs. real');
+  const host=$('sens'), W=Math.max(280,host.clientWidth||300), H=190, ml=52, mr=12, mt=14, mb=30;
+  const ks=[]; for(let k=-5;k<=15;k++) ks.push(k);
+  const ys=ks.map(k=>sumBy(enrich(state.base,k,state.scope).filter(r=>r.transit),()=>true,'risk'));
+  const ticks=niceTicks(Math.max(1,...ys)), ymax=ticks[ticks.length-1], x=k=>ml+(k+5)/20*(W-ml-mr), y=v=>mt+(1-v/ymax)*(H-mt-mb);
+  let sv='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" role="img" aria-label="Valor en riesgo según días de atraso adicional">';
+  ticks.forEach(v=>{ sv+='<line class="grid" x1="'+ml+'" x2="'+(W-mr)+'" y1="'+y(v)+'" y2="'+y(v)+'"/><text x="'+(ml-6)+'" y="'+(y(v)+4)+'" text-anchor="end">'+fM(v)+'</text>'; });
+  [-5,0,5,10,15].forEach(k=>{ sv+='<text x="'+x(k)+'" y="'+(H-10)+'" text-anchor="middle">'+sd(k)+' d</text>'; });
+  let path=''; ks.forEach((k,i)=>{ path+=(i?'H'+x(k)+'V'+y(ys[i]):'M'+x(k)+' '+y(ys[i])); });
+  sv+='<path d="'+path+'" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>';
+  const ci=ks.indexOf(state.delay);
+  sv+='<line class="corte" x1="'+x(state.delay)+'" x2="'+x(state.delay)+'" y1="'+mt+'" y2="'+(H-mb)+'"/>';
+  sv+='<circle cx="'+x(state.delay)+'" cy="'+y(ys[ci])+'" r="5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/></svg>';
+  host.innerHTML=sv;
+}
+function renderPerf(){
+  const key=state.group, g={};
+  E.forEach(r=>{ (g[r[key]]=g[r[key]]||[]).push(r); });
+  const G=Object.entries(g).map(([k,rs])=>({k, n:rs.length, u:rs.reduce((a,r)=>a+r.unid,0), dev:rs.reduce((a,r)=>a+r.dev,0)/rs.length,
+    late:rs.filter(r=>r.dev>0).length/rs.length, ur:sumBy(rs,()=>true,'urisk'), risk:sumBy(rs,()=>true,'risk')})).sort((a,b)=>b.risk-a.risk||b.dev-a.dev);
+  const mx=Math.max(1,...G.map(x=>x.risk));
+  const name={modelo:'Modelo',nav:'Naviera',origen:'Origen',fam:'Familia de partes'}[key];
+  $('perf').innerHTML='<thead><tr><th>'+name+'</th><th class="n">Embarques</th><th class="n">Unidades</th><th class="n">Desvío prom. (d)</th><th class="n">Con atraso de ETA</th><th class="n">Autos en riesgo</th><th class="n">Valor en riesgo</th></tr></thead><tbody>'
+   +G.map(x=>'<tr><td><strong>'+x.k+'</strong></td><td class="n">'+x.n+'</td><td class="n">'+thou(x.u)+'</td><td class="n">'+dec(x.dev,true)+'</td><td class="n">'+pct(x.late)+'</td><td class="n">'+thou(x.ur)+'</td><td><div class="barcell"><span class="bar" style="width:'+Math.round(x.risk/mx*90)+'px"></span><span style="min-width:104px;text-align:right">'+usd(x.risk)+'</span></div></td></tr>').join('')+'</tbody>';
+}
+function renderTable(){
+  let rs=[...E];
+  if(state.fSit!=='all') rs=rs.filter(r=>(r.transit?'En tránsito':'Arribado')===state.fSit);
+  if(state.fEst!=='all') rs=rs.filter(r=>r.est===state.fEst);
+  if(state.fMod!=='all') rs=rs.filter(r=>r.modelo===state.fMod);
+  rs.sort((a,b)=>b.dev-a.dev||b.venta-a.venta);
+  $('tblCount').textContent=rs.length+' de '+E.length+' embarques';
+  $('tbl').innerHTML='<thead><tr><th>Embarque</th><th>Modelo</th><th class="n">Unid.</th><th>Naviera</th><th>Origen</th><th class="n">ETA original</th><th class="n">ETA actual</th><th class="n">Desvío</th><th class="n">Entrega comprometida</th><th class="n">Entrega proyectada</th><th>Estado</th><th class="n">Valor de venta</th></tr></thead><tbody>'
+   +(rs.length?rs.map(r=>'<tr class="'+(r.id===state.sel?'selrow':'')+'"><td><button class="link" data-id="'+r.id+'">'+r.id+'</button></td><td>'+r.modelo+'</td><td class="n">'+r.unid+'</td><td>'+r.nav+'</td><td>'+r.origen+'</td><td class="n">'+fD(r.etaO,true)+'</td><td class="n">'+fD(r.etaA,true)+'</td><td class="n"><strong>'+sd(r.dev)+' d</strong></td><td class="n">'+fD(r.com,true)+'</td><td class="n">'+fD(r.proy,true)+'</td><td>'+pill(r.est,r.transit)+'</td><td class="n">'+usd(r.venta)+'</td></tr>').join(''):'<tr><td colspan="12" class="muted">Ningún embarque coincide con los filtros.</td></tr>')+'</tbody>';
+  const mark=(id,v)=>document.querySelectorAll('#'+id+' .chip').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===v));
+  mark('fSit',state.fSit); mark('fEst',state.fEst); mark('fMod',state.fMod);
+}
+function renderBanner(){
+  const on=state.delay!==0, b=$('simBanner'); b.hidden=!on;
+  if(on){ const lbl=$('scope').selectedOptions[0]?.textContent||''; $('simBannerTxt').textContent='Simulación activa: '+sd(state.delay)+' días de ETA para «'+lbl+'». Las cifras de abajo no son datos reales.'; }
+}
+function update(){
+  E=enrich(state.base,state.delay,state.scope);
+  renderBanner(); renderHero(); renderWeekly(); renderChart(); renderDetail(); renderSim(); renderPerf(); renderTable();
+  document.querySelectorAll('#groupSeg .chip').forEach(b=>b.setAttribute('aria-pressed',b.dataset.g===state.group));
+  document.querySelectorAll('#nShow .chip').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===state.nShow));
+}
+
+/* ---------- carga de datos ---------- */
+function loadData(text,mode,stamp){
+  const res=buildRows(parseCSV(text));
+  if(res.error) return res;
+  state.base=res.rows; state.mode=mode;
+  if(!state.base.some(r=>r.id===state.sel)) state.sel=null;
+  const n=res.rows.length;
+  const hm = stamp ? pad(new Date(stamp).getHours())+':'+pad(new Date(stamp).getMinutes()) : '';
+  $('badge-src').textContent = mode==='pasted' ? n+' embarques · datos pegados, solo en tu navegador'
+    : mode==='sheet' ? n+' embarques · Google Sheets, leído a las '+hm
+    : n+' embarques · copia incluida';
+  scopeOptions();
+  return res;
+}
+async function fetchSheet(manual){
+  if(!SHEET_CSV_URL) return;
+  const badge=$('badge-src'), btn=$('btnUpdate'); btn.disabled=true; btn.textContent='Actualizando…';
+  try{
+    const sep = SHEET_CSV_URL.includes('?') ? '&' : '?';
+    const resp = await fetch(SHEET_CSV_URL+sep+'t='+Date.now(), {cache:'no-store'});
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const res = loadData(await resp.text(),'sheet',Date.now());
+    if(res.error) throw new Error(res.error);
+    badge.title=''; update();
+    if(manual){ const m=$('pasteMsg'); m.className='msg ok'; m.textContent='Planilla leída: '+res.rows.length+' embarques.'; }
+  }catch(e){
+    badge.title=String(e&&e.message||e);
+    badge.textContent = state.mode==='sheet' ? badge.textContent+' · no se pudo actualizar ahora'
+      : state.mode==='pasted' ? badge.textContent
+      : state.base.length+' embarques · no se pudo leer Google Sheets, se muestra la copia incluida';
+    if(manual){ const m=$('pasteMsg'); m.className='msg err'; m.textContent='No se pudo leer la planilla: '+badge.title; }
+  }finally{ btn.disabled=false; btn.textContent='Actualizar'; }
+}
+
+/* ---------- eventos ---------- */
+$('corte').addEventListener('change',e=>{ const t=parseDate(e.target.value); if(!isNaN(t)){ state.corte=t; scopeOptions(); update(); }});
+$('delay').addEventListener('input',e=>{ state.delay=+e.target.value; update(); });
+$('scope').addEventListener('change',e=>{ state.scope=e.target.value; update(); });
+$('simReset').addEventListener('click',()=>{ state.delay=0; $('delay').value=0; update(); });
+$('groupSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b){ state.group=b.dataset.g; update(); }});
+$('nShow').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b){ state.nShow=b.dataset.v; update(); }});
+$('fSit').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b){ state.fSit=b.dataset.v; renderTable(); }});
+$('fEst').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b){ state.fEst=b.dataset.v; renderTable(); }});
+$('fMod').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b){ state.fMod=b.dataset.v; renderTable(); }});
+$('tbl').addEventListener('click',e=>{ const b=e.target.closest('button.link'); if(b){ state.sel=b.dataset.id; update(); $('detTitle').scrollIntoView({behavior:'smooth',block:'center'}); }});
+$('chart').addEventListener('click',e=>{ const h=e.target.closest('.hit'); if(h){ state.sel=h.dataset.id; update(); }});
+bindTip('chart','tip',h=>{ const r=E.find(x=>x.id===h.dataset.id); if(!r) return '';
+  return '<b>'+r.id+'</b> · '+r.modelo+' · '+r.unid+' unid.<br>'+r.nav+' · '+r.origen+'<br>ETA '+fD(r.etaO)+' → '+fD(r.etaA)+' ('+sd(r.dev)+' d)<br>Entrega '+fD(r.com)+' → '+fD(r.proy)+'<br>'+ST[r.est].label+' · '+usd(r.venta); });
+bindTip('weekly','tipW',h=>{ const o=WK[+h.dataset.i]; if(!o) return '';
+  return '<b>Semana del '+fD(o.w)+'</b> · '+o.n+' embarques · '+o.u+' autos'+EST.map(e=>'<br>'+ST[e].label+': '+usd(o[e])).join(''); });
+$('btnUpdate').addEventListener('click',()=>{ fetchSheet(true); });
+$('paste').addEventListener('paste',()=>{ setTimeout(()=>$('apply').click(),60); });
+$('apply').addEventListener('click',()=>{
+  const txt=$('paste').value.trim(), m=$('pasteMsg');
+  if(!txt){ m.className='msg err'; m.textContent='Pegá primero los datos de la planilla.'; return; }
+  const res=loadData(txt,'pasted');
+  if(res.error){ m.className='msg err'; m.textContent=res.error; return; }
+  m.className='msg ok'; m.textContent='Listo: '+res.rows.length+' embarques cargados'+(res.skipped?' ('+res.skipped+' filas incompletas se omitieron).':'.'); update();
+});
+$('restore').addEventListener('click',()=>{ $('paste').value=''; state.mode='embedded'; fetchSheet(true); });
+let rz; window.addEventListener('resize',()=>{ clearTimeout(rz); rz=setTimeout(()=>{ renderWeekly(); renderChart(); renderSim(); },120); });
+
+loadData(EMBEDDED_CSV,'embedded');
+update();
+$('badge-src').textContent='Conectando con Google Sheets…';
+fetchSheet(false);
+if(AUTO_REFRESH_MS>0) setInterval(()=>{ if(!document.hidden && state.mode!=='pasted') fetchSheet(false); }, AUTO_REFRESH_MS);
+</script>
+
+</body>
+</html>
